@@ -113,3 +113,43 @@ disposer d'un point d'entrée sur
 
 Elle ne modifie ni ne dépend d'aucun des fichiers portés depuis GeoSD ;
 elle peut être supprimée sans impact si le dépôt jetable est abandonné.
+
+### Étape 3 — Écart constaté : `CVL.pmtiles` est vectoriel, pas raster
+
+**Attendu :** afficher `CVL.pmtiles` via `pmtiles` + `leafletRasterLayer`
+(choix volontaire de commencer par la version la plus simple, cf.
+consigne initiale du spike — explicitement pas `protomaps-leaflet`
+pour ce premier essai).
+
+**Observé :** erreur à l'exécution —
+
+```
+Error: archive contains MVT vector tiles, but leafletRasterLayer is for
+displaying raster tiles. See https://github.com/protomaps/PMTiles/tree/main/js
+for details.
+```
+
+`CVL.pmtiles` (et vraisemblablement les autres fichiers régionaux du
+même serveur, non vérifié individuellement) contient des tuiles
+vectorielles (MVT), pas des tuiles raster pré-rendues. `leafletRasterLayer`
+ne peut structurellement pas les afficher : ce n'est pas un problème de
+configuration mais une incompatibilité de format.
+
+**Ajustement :** remplacement de `pmtiles` + `leafletRasterLayer` par
+`protomaps-leaflet` (`protomapsL.leafletLayer(...)`), qui lit le format
+PMTiles en interne et sait rendre du vectoriel dans Leaflet. Toujours
+uniquement dans `addBaseLayerSwitcher`, toujours en chargement paresseux
+via le même protocole CDN-avec-repli. Thème `light` (fourni nativement
+par la lib) utilisé comme point de départ, non encore comparé
+visuellement à `offline-map-lab` (point 5, toujours ouvert).
+
+**Conséquence pour la suite du spike :** cet écart ne change rien aux 5
+points à vérifier, mais déplace une partie de la question du point 4
+(poids/mode de chargement) — le vectoriel se comporte différemment du
+raster en usage hors connexion (rendu à la volée côté client vs. tuiles
+pré-rendues), à garder en tête en testant le mode avion (point 3).
+
+**Statut à ce stade :** changement de lib effectué, non encore revérifié
+en conditions réelles (pas d'accès réseau/tablette depuis cet
+environnement) — à confirmer que l'erreur a bien disparu et que le
+fond s'affiche correctement avant de passer au point 2.
