@@ -2210,7 +2210,28 @@ function addBaseLayerSwitcher(map) {
     try {
       const P = protomapsL;
 
-      const paint_rules = [
+      /* ---- DIAGNOSTIC (étape 6, cf. README-spike.md) ----
+         Constat : avec les règles complètes ci-dessous, rien ne
+         s'affiche du tout (même plus l'eau), sans la moindre erreur en
+         console — signe probable qu'une exception silencieuse dans une
+         des fonctions (filter/width/font) fait avorter tout le rendu
+         de la tuile en interne, sans remonter. Pour isoler la cause
+         sans deviner à l'aveugle : bascule temporaire sur un jeu de
+         règles minimal (une seule couche, aucun filtre, aucune
+         fonction). PMTILES_DEBUG_MODE=true utilise ce jeu réduit ;
+         repasser à false une fois l'affichage de base confirmé, pour
+         revenir aux règles complètes déjà écrites. */
+      const PMTILES_DEBUG_MODE = true;
+
+      const paint_rules_debug = [
+        {
+          dataLayer: 'water',
+          symbolizer: new P.PolygonSymbolizer({ fill: 'red' })
+        }
+      ];
+      const label_rules_debug = [];
+
+      const paint_rules_full = [
         // landuse_soft
         {
           dataLayer: 'landuse', minzoom: 6,
@@ -2262,7 +2283,7 @@ function addBaseLayerSwitcher(map) {
         }
       ];
 
-      const label_rules = [
+      const label_rules_full = [
         // waterway_minor_label
         {
           dataLayer: 'waterway', minzoom: 12,
@@ -2298,6 +2319,12 @@ function addBaseLayerSwitcher(map) {
           })
         }
       ];
+
+      const paint_rules = PMTILES_DEBUG_MODE ? paint_rules_debug : paint_rules_full;
+      const label_rules = PMTILES_DEBUG_MODE ? label_rules_debug : label_rules_full;
+      if (PMTILES_DEBUG_MODE) {
+        console.warn('SPIKE PMTiles : PMTILES_DEBUG_MODE actif — une seule règle minimale (eau en rouge) au lieu du style complet. Voir README-spike.md, étape 6.');
+      }
 
       const lyrPmtiles = P.leafletLayer({
         url: PMTILES_URL,

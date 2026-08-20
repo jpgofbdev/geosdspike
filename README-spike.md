@@ -229,3 +229,38 @@ ultérieur si la fidélité au prototype MapLibre le demande.
 
 **Statut :** changement effectué, non encore revérifié en conditions
 réelles.
+
+### Étape 6 — Diagnostic : rien ne s'affiche avec le style complet
+
+**Observé (test réel) :** avec les règles complètes de l'étape 5, plus
+rien ne s'affiche du tout (même plus l'eau, qui s'affichait à l'étape 4
+avec le thème générique) — juste le fond blanc (`backgroundColor`).
+Aucune erreur en console.
+
+**Hypothèse :** une exception silencieuse dans une des fonctions
+passées aux règles (`filter`, `width` en fonction de zoom, `font` en
+fonction de zoom, `dash`...) fait probablement avorter tout le rendu
+de la tuile côté `protomaps-leaflet`, sans remonter d'erreur exploitable
+en console — ce type de lib avale souvent les exceptions internes au
+lieu de les propager. Sans accès réseau pour tester ici, deviner quelle
+fonction précisément pose problème serait peu fiable.
+
+**Action :** bascule temporaire sur un jeu de règles minimal
+(`PMTILES_DEBUG_MODE = true` en tête du bloc, dans
+`addBaseLayerSwitcher`) : une seule règle, `water` en rouge vif, sans
+filtre ni fonction. Objectif : confirmer si le rattachement de base
+(`dataLayer` ↔ couche réelle du tuileset) fonctionne au moins pour le
+cas le plus simple possible, avant de réintroduire progressivement les
+filtres et fonctions un par un. Les règles complètes de l'étape 5 sont
+conservées dans le code (`paint_rules_full` / `label_rules_full`),
+prêtes à être réactivées en repassant `PMTILES_DEBUG_MODE` à `false`.
+
+**Prochain test attendu :** si l'eau apparaît en rouge → le câblage de
+base fonctionne, le problème vient d'une des fonctions plus élaborées
+(à réintroduire une par une pour isoler laquelle). Si rien n'apparaît
+même en rouge → problème plus en amont (nom de couche, zoom/étendue de
+la vue, chargement du fichier lui-même) — vérifier alors l'onglet
+Réseau du navigateur pour confirmer que `CVL.pmtiles` est bien
+téléchargé (requêtes avec statut 200, pas d'erreur CORS).
+
+**Statut :** en attente du résultat de ce test avant de poursuivre.
