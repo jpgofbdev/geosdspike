@@ -2128,9 +2128,52 @@ function addBaseLayerSwitcher(map) {
   const lyrIgnPlan = ignWmtsLayer('GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2', 'image/png');
   const lyrIgnOrtho = ignWmtsLayer('ORTHOIMAGERY.ORTHOPHOTOS', 'image/jpeg');
   lyrOSM.addTo(map);
-  L.control.layers(
+  const layersControl = L.control.layers(
     { 'OpenStreetMap': lyrOSM, 'Plan IGN': lyrIgnPlan, 'Orthophoto IGN': lyrIgnOrtho },
     null,
     { position: 'topright', collapsed: false }
   ).addTo(map);
+
+  /* ============================================================
+     SPIKE PMTiles — voir README-spike.md pour le contexte complet.
+     Seul ajout de ce spike dans ce fichier : une entrée "Fond PMTiles
+     (test)" greffée sur le switcher existant, sans toucher aux fonds
+     déjà en place ni au reste de l'application.
+
+     Dépendance externe ajoutée pour ce spike (signalée comme convenu) :
+     la bibliothèque pmtiles.js (build UMD, expose window.pmtiles avec
+     PMTiles et leafletRasterLayer). Chargement paresseux via
+     loadScript/loadFromCandidates, déjà définis plus bas dans ce même
+     fichier pour Leaflet — réutilisés ici pour rester cohérent avec le
+     protocole de chargement CDN-avec-repli déjà en place.
+
+     Le fond n'apparaît dans le switcher qu'une fois la lib chargée
+     (quelques centaines de ms en pratique) : Leaflet gère très bien
+     l'ajout tardif d'un fond via layersControl.addBaseLayer, donc pas
+     besoin de bloquer l'initialisation de la carte pour ça.
+     ============================================================ */
+  const PMTILES_JS_CANDIDATES = [
+    'https://cdn.jsdelivr.net/npm/pmtiles@3/dist/pmtiles.js',
+    'https://unpkg.com/pmtiles@3/dist/pmtiles.js'
+  ];
+  // CVL choisi pour ce premier essai (cf. consigne du spike). Les autres
+  // fichiers régionaux disponibles sur le même serveur ne sont pas
+  // branchés ici : un seul fond à la fois pour ce premier test.
+  const PMTILES_URL = 'https://tiles.jpg-cvl-dev.fr/tiles/CVL.pmtiles';
+
+  loadFromCandidates(loadScript, PMTILES_JS_CANDIDATES).then(ok => {
+    if (!ok || typeof window.pmtiles === 'undefined') {
+      console.error('SPIKE PMTiles : bibliothèque pmtiles.js non chargée (candidats CDN épuisés) — fond PMTiles indisponible pour cette session.');
+      return;
+    }
+    try {
+      const archive = new pmtiles.PMTiles(PMTILES_URL);
+      const lyrPmtiles = pmtiles.leafletRasterLayer(archive, {
+        attribution: 'PMTiles (spike) — CVL'
+      });
+      layersControl.addBaseLayer(lyrPmtiles, 'Fond PMTiles (test)');
+    } catch (err) {
+      console.error('SPIKE PMTiles : échec d’initialisation de la couche.', err);
+    }
+  });
 }

@@ -1,9 +1,115 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Hello World Page</title>
-  </head>
-  <body>
-    <h1>Hello, World!</h1>
-  </body>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoSD spike — PMTiles hors connexion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1a2e22; --ink-soft:#3f5747; --paper:#f3f4ee; --panel:#fbfbf8;
+    --line:#c7cabb; --accent:#00694d; --accent-dark:#004d38; --danger:#8a3324;
+    --mono:'IBM Plex Mono', ui-monospace, monospace;
+    --sans:'IBM Plex Sans', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    font-family:var(--sans); color:var(--ink); background:var(--paper);
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    padding:32px 16px 60px;
+  }
+  .wrap{ width:min(640px, 100%); }
+  .mark{
+    display:inline-block; font-family:var(--mono); font-size:12px; letter-spacing:.08em;
+    color:var(--accent); border:1px solid var(--accent); padding:2px 6px; border-radius:2px;
+    margin-bottom:14px;
+  }
+  h1{ font-size:22px; margin:0 0 6px; letter-spacing:.01em; }
+  .subtitle{ color:var(--ink-soft); font-size:14px; margin:0 0 28px; }
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:20px 22px; margin-bottom:18px;
+  }
+  .card h2{ font-size:14px; margin:0 0 10px; letter-spacing:.02em; }
+  .card p{ font-size:13px; line-height:1.55; color:var(--ink-soft); margin:0 0 10px; }
+  .card p:last-child{ margin-bottom:0; }
+  .banner{
+    background:#f3e4c6; border:1px solid #c9a768; color:#6b4a13;
+    font-size:13px; padding:10px 14px; border-radius:6px; margin-bottom:24px; line-height:1.5;
+  }
+  ol, ul{ font-size:13px; color:var(--ink-soft); line-height:1.6; padding-left:20px; margin:0; }
+  li{ margin-bottom:4px; }
+  code{
+    font-family:var(--mono); font-size:12px; background:var(--paper);
+    border:1px solid var(--line); border-radius:3px; padding:1px 5px;
+  }
+  .cta{
+    display:inline-block; font-family:var(--sans); font-size:14px; font-weight:600;
+    background:var(--accent); color:#fff; text-decoration:none;
+    padding:12px 20px; border-radius:5px; border:1px solid var(--accent-dark);
+  }
+  .cta:hover{ background:var(--accent-dark); }
+  .cta-wrap{ text-align:center; margin:26px 0 30px; }
+  footer{ font-family:var(--mono); font-size:11px; color:var(--ink-soft); text-align:center; margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="mark">SPIKE</span>
+  <h1>GeoSD — Fond de carte PMTiles hors connexion</h1>
+  <p class="subtitle">Expérimentation isolée, séparée du projet GeoSD de production. Voir <code>README-spike.md</code> dans le dépôt pour le détail complet.</p>
+
+  <div class="banner">
+    ⚠ Ce dépôt est jetable : soit le spike est concluant et nourrit une décision documentée dans
+    GeoSD, soit il est abandonné sans laisser de trace dans le projet réel. Ne pas s'appuyer dessus
+    pour un usage terrain réel.
+  </div>
+
+  <div class="card">
+    <h2>Ce qui est testé ici</h2>
+    <p>
+      La page de saisie terrain (<code>geosd-terrain-saisie.html</code>) est portée telle quelle
+      depuis GeoSD, avec une seule modification : le sélecteur de fond de carte propose désormais
+      une entrée supplémentaire, <strong>« Fond PMTiles (test) »</strong>, à côté d'OpenStreetMap,
+      du Plan IGN et de l'Orthophoto IGN.
+    </p>
+    <p>
+      Ce fond charge le fichier <code>CVL.pmtiles</code> (région Centre-Val de Loire) via la
+      bibliothèque <code>pmtiles</code> et <code>leafletRasterLayer</code>. Il apparaît dans le
+      switcher quelques instants après le chargement de la page (chargement paresseux de la
+      bibliothèque).
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Comment tester</h2>
+    <ol>
+      <li>Ouvrir la page de saisie ci-dessous.</li>
+      <li>Choisir un territoire (ou passer).</li>
+      <li>Ouvrir le sélecteur de fonds de carte (en haut à droite) et cocher <strong>« Fond PMTiles (test) »</strong>.</li>
+      <li>Vérifier l'affichage, puis cliquer sur la carte pour confirmer que la saisie de point (popup + formulaire) fonctionne toujours par-dessus ce fond.</li>
+      <li>Repasser en mode avion une fois le fond chargé, et réessayer les mêmes actions pour évaluer le comportement hors connexion.</li>
+    </ol>
+  </div>
+
+  <div class="cta-wrap">
+    <a class="cta" href="geosd-terrain-saisie.html">Ouvrir la page de saisie →</a>
+  </div>
+
+  <div class="card">
+    <h2>Points à vérifier (voir README-spike.md)</h2>
+    <ul>
+      <li>Rendu correct du fond PMTiles une fois sélectionné.</li>
+      <li>Cohabitation sans conflit avec la couche de marqueurs.</li>
+      <li>Comportement en coupure réseau <em>effective</em> (mode avion).</li>
+      <li>Poids / mode de chargement compatibles avec un usage tablette.</li>
+      <li>Fidélité visuelle par rapport au prototype MapLibre initial (<code>offline-map-lab</code>).</li>
+    </ul>
+  </div>
+
+  <footer>geosdspike — dépôt jetable, hors périmètre GeoSD production</footer>
+</div>
+</body>
 </html>
