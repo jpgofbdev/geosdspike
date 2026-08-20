@@ -264,3 +264,26 @@ Réseau du navigateur pour confirmer que `CVL.pmtiles` est bien
 téléchargé (requêtes avec statut 200, pas d'erreur CORS).
 
 **Statut :** en attente du résultat de ce test avant de poursuivre.
+
+### Étape 6 bis — Ajustement du diagnostic (routes plutôt qu'eau)
+
+**Constat sur le test réel :** `CVL.pmtiles` répond en **206** (requêtes
+par plages d'octets) dans l'onglet Réseau — le fichier est bien
+accessible et lu, pas de souci réseau/CORS à ce niveau. Mais la vue
+testée était très zoomée sur un point précis, où il n'y a
+vraisemblablement aucune eau à proximité immédiate : la règle de
+diagnostic `water` (localisée par nature) n'était donc pas le bon choix
+pour confirmer que le rattachement de base fonctionne — son absence de
+rendu ne prouve rien dans ce cas précis.
+
+**Ajustement :** règle de diagnostic remplacée par `transportation`
+(les routes), quasi omniprésentes, beaucoup plus fiable comme test de
+présence à n'importe quel endroit de la carte.
+
+**Prochain test attendu :** si des lignes rouges (routes) apparaissent
+→ le rattachement de base fonctionne, le problème vient bien d'une des
+fonctions plus élaborées du style complet (à réintroduire une par une).
+Si toujours rien → creuser plus profondément (vérifier la console pour
+le message d'avertissement `PMTILES_DEBUG_MODE actif`, confirmant que
+le bon code est bien déployé, et éventuellement dézoomer pour retrouver
+une vue proche de celle de l'étape 4 où l'eau s'affichait).

@@ -2225,8 +2225,8 @@ function addBaseLayerSwitcher(map) {
 
       const paint_rules_debug = [
         {
-          dataLayer: 'water',
-          symbolizer: new P.PolygonSymbolizer({ fill: 'red' })
+          dataLayer: 'transportation',
+          symbolizer: new P.LineSymbolizer({ color: 'red', width: 3 })
         }
       ];
       const label_rules_debug = [];
