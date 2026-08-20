@@ -2140,27 +2140,47 @@ function addBaseLayerSwitcher(map) {
      (test)" greffée sur le switcher existant, sans toucher aux fonds
      déjà en place ni au reste de l'application.
 
-     ⚠ Écart par rapport au plan initial (documenté dans README-spike.md,
-     section Journal) : le premier essai utilisait `pmtiles` +
-     `leafletRasterLayer`, qui suppose un fond RASTER. Erreur constatée
-     à l'exécution : CVL.pmtiles contient en réalité des tuiles
-     vectorielles (MVT), incompatibles avec leafletRasterLayer. On
-     bascule donc sur `protomaps-leaflet`, qui sait lire le format
-     PMTiles et rendre du vectoriel dans Leaflet (elle inclut la
-     lecture PMTiles en interne — pas de dépendance supplémentaire par
-     rapport à ce changement de lib, signalé comme convenu).
+     ⚠ Écarts par rapport au plan initial (documentés dans
+     README-spike.md, section Journal) :
+     1. `pmtiles`+`leafletRasterLayer` (raster) → `protomaps-leaflet`
+        (vectoriel), après erreur constatée : CVL.pmtiles contient des
+        tuiles MVT, pas raster.
+     2. Thème générique `light` → règles de style sur mesure
+        (`paint_rules`/`label_rules`), après constat que le thème
+        intégré ne matchait presque rien : il suppose le schéma de
+        couches "basemap" standard de Protomaps, alors que ce tuileset
+        utilise le schéma réel listé ci-dessous (proche d'OpenMapTiles),
+        celui du prototype MapLibre `offline-map-lab`.
 
      Dépendance externe (remplace pmtiles.js) : protomaps-leaflet, build
-     UMD, expose window.protomapsL avec leafletLayer(). Chargement
-     paresseux via loadScript/loadFromCandidates, déjà définis plus bas
-     dans ce même fichier pour Leaflet — réutilisés ici pour rester
-     cohérent avec le protocole de chargement CDN-avec-repli déjà en
-     place.
+     UMD, expose window.protomapsL avec leafletLayer() et les
+     symbolizers (PolygonSymbolizer, LineSymbolizer, TextSymbolizer...).
+     Chargement paresseux via loadScript/loadFromCandidates, déjà
+     définis plus bas dans ce même fichier pour Leaflet — réutilisés ici
+     pour rester cohérent avec le protocole de chargement CDN-avec-repli
+     déjà en place.
 
-     Le fond n'apparaît dans le switcher qu'une fois la lib chargée
-     (quelques centaines de ms en pratique) : Leaflet gère très bien
-     l'ajout tardif d'un fond via layersControl.addBaseLayer, donc pas
-     besoin de bloquer l'initialisation de la carte pour ça.
+     Règles ci-dessous : transposition manuelle du style.json MapLibre
+     du prototype offline-map-lab (fourni par l'équipe) vers l'API
+     protomaps-leaflet, couche par couche (landuse/landcover/water/
+     waterway/transportation/transportation_name/place). Schéma de
+     couches réel du tuileset confirmé par inspection (pmtiles.io) :
+     aerodrome_label, aeroway, boundary, building, housenumber,
+     landcover, landuse, mountain_peak, park, place, poi, transportation,
+     transportation_name, water, water_name, waterway — seul le
+     sous-ensemble utilisé par le style MapLibre d'origine est repris
+     ici pour ce premier essai (pas de bâti, POI, aérodromes... pour
+     rester au plus près du style existant sans en inventer un nouveau).
+
+     ⚠ Deux points non vérifiables depuis cet environnement (pas
+     d'accès réseau ici), à confirmer au premier test réel :
+     - le rendu en tirets des cours d'eau intermittents (option `dash`
+       du LineSymbolizer) ;
+     - le suivi du tracé par les libellés de cours d'eau/routes
+       (`symbol-placement:"line"` en MapLibre n'a pas d'équivalent
+       garanti dans protomaps-leaflet ; ils s'afficheront probablement
+       en un point plutôt que le long de la ligne — dégradation
+       acceptée pour ce premier essai, à noter comme écart si confirmé).
      ============================================================ */
   const PROTOMAPS_JS_CANDIDATES = [
     'https://cdn.jsdelivr.net/npm/protomaps-leaflet@2/dist/protomaps-leaflet.js',
@@ -2171,19 +2191,119 @@ function addBaseLayerSwitcher(map) {
   // branchés ici : un seul fond à la fois pour ce premier test.
   const PMTILES_URL = 'https://tiles.jpg-cvl-dev.fr/tiles/CVL.pmtiles';
 
+  // Interpolation linéaire par paliers, pour reproduire les expressions
+  // ["interpolate", ["linear"], ["zoom"], ...] du style.json d'origine.
+  function pmtilesLerp(zoom, stops) {
+    if (zoom <= stops[0][0]) return stops[0][1];
+    for (let i = 0; i < stops.length - 1; i++) {
+      const [z0, v0] = stops[i], [z1, v1] = stops[i + 1];
+      if (zoom >= z0 && zoom <= z1) return v0 + (zoom - z0) / (z1 - z0) * (v1 - v0);
+    }
+    return stops[stops.length - 1][1];
+  }
+
   loadFromCandidates(loadScript, PROTOMAPS_JS_CANDIDATES).then(ok => {
     if (!ok || typeof window.protomapsL === 'undefined') {
       console.error('SPIKE PMTiles : bibliothèque protomaps-leaflet non chargée (candidats CDN épuisés) — fond PMTiles indisponible pour cette session.');
       return;
     }
     try {
-      // Thème "light" fourni par protomaps-leaflet : point de départ
-      // générique pour ce premier essai, pas encore comparé/ajusté par
-      // rapport au rendu du prototype MapLibre initial (point 5 du
-      // README-spike.md, encore à vérifier).
-      const lyrPmtiles = protomapsL.leafletLayer({
+      const P = protomapsL;
+
+      const paint_rules = [
+        // landuse_soft
+        {
+          dataLayer: 'landuse', minzoom: 6,
+          symbolizer: new P.PolygonSymbolizer({ fill: '#f2f0e6', opacity: 0.45 })
+        },
+        // landcover_wood
+        {
+          dataLayer: 'landcover', minzoom: 6,
+          filter: (z, f) => f.props.class === 'wood',
+          symbolizer: new P.PolygonSymbolizer({ fill: '#cfe8cf', opacity: 0.75 })
+        },
+        // landcover_grass (grass + park)
+        {
+          dataLayer: 'landcover', minzoom: 10,
+          filter: (z, f) => f.props.class === 'grass' || f.props.class === 'park',
+          symbolizer: new P.PolygonSymbolizer({ fill: '#dff1d2', opacity: 0.65 })
+        },
+        // water
+        {
+          dataLayer: 'water',
+          symbolizer: new P.PolygonSymbolizer({ fill: '#a0c8f0' })
+        },
+        // waterway_minor (fossés / intermittents), en tirets
+        {
+          dataLayer: 'waterway',
+          filter: (z, f) => f.props.class === 'ditch' || f.props.intermittent === 1,
+          symbolizer: new P.LineSymbolizer({
+            color: '#86bce8',
+            width: z => pmtilesLerp(z, [[10, 0.9], [12, 1.4], [14, 2.2]]),
+            dash: [1.5, 1.5]
+          })
+        },
+        // waterway_main (cours d'eau permanents)
+        {
+          dataLayer: 'waterway',
+          filter: (z, f) => f.props.class !== 'ditch' && f.props.intermittent === 0,
+          symbolizer: new P.LineSymbolizer({
+            color: '#2b7bbf',
+            width: z => pmtilesLerp(z, [[6, 0.4], [8, 0.8], [10, 1.7], [12, 2.6], [14, 3.8]])
+          })
+        },
+        // roads
+        {
+          dataLayer: 'transportation',
+          symbolizer: new P.LineSymbolizer({
+            color: '#888',
+            width: z => pmtilesLerp(z, [[6, 0.3], [10, 0.7], [14, 1.3]])
+          })
+        }
+      ];
+
+      const label_rules = [
+        // waterway_minor_label
+        {
+          dataLayer: 'waterway', minzoom: 12,
+          filter: (z, f) => !!f.props.name && (f.props.class === 'ditch' || f.props.intermittent === 1),
+          symbolizer: new P.TextSymbolizer({
+            label_props: ['name'], fill: '#4d93c8', stroke: '#ffffff', width: 2,
+            font: z => `${pmtilesLerp(z, [[12, 10], [14, 11]])}px sans-serif`
+          })
+        },
+        // waterway_main_label
+        {
+          dataLayer: 'waterway', minzoom: 10,
+          filter: (z, f) => !!f.props.name && f.props.class !== 'ditch' && f.props.intermittent === 0,
+          symbolizer: new P.TextSymbolizer({
+            label_props: ['name'], fill: '#1f6fb3', stroke: '#ffffff', width: 2,
+            font: z => `${pmtilesLerp(z, [[10, 11], [12, 12], [14, 13]])}px sans-serif`
+          })
+        },
+        // road_name (coalesce name:fr / name)
+        {
+          dataLayer: 'transportation_name', minzoom: 13,
+          symbolizer: new P.TextSymbolizer({
+            label_props: ['name:fr', 'name'], fill: '#444', stroke: '#ffffff', width: 1.5,
+            font: '11px sans-serif'
+          })
+        },
+        // place (coalesce name:fr / name)
+        {
+          dataLayer: 'place', minzoom: 6,
+          symbolizer: new P.TextSymbolizer({
+            label_props: ['name:fr', 'name'], fill: '#111', stroke: '#ffffff', width: 1.6,
+            font: z => `${pmtilesLerp(z, [[6, 11], [10, 14], [14, 16]])}px sans-serif`
+          })
+        }
+      ];
+
+      const lyrPmtiles = P.leafletLayer({
         url: PMTILES_URL,
-        theme: 'light',
+        paint_rules,
+        label_rules,
+        backgroundColor: '#ffffff',
         attribution: 'PMTiles (spike) — CVL'
       });
       layersControl.addBaseLayer(lyrPmtiles, 'Fond PMTiles (test)');

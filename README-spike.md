@@ -153,3 +153,79 @@ pré-rendues), à garder en tête en testant le mode avion (point 3).
 en conditions réelles (pas d'accès réseau/tablette depuis cet
 environnement) — à confirmer que l'erreur a bien disparu et que le
 fond s'affiche correctement avant de passer au point 2.
+
+### Étape 4 — Rendu très différent du prototype MapLibre (point 5)
+
+**Observé (test réel sur le dépôt GitHub Pages) :** l'erreur de
+l'étape 3 a bien disparu, le fond PMTiles se charge et s'affiche, mais
+le rendu ne montre que l'hydrographie (cours d'eau/plans d'eau en
+bleu clair) sur fond gris uni — pas de routes, pas de bâti, pas
+d'occupation du sol, aucun libellé. Écart important par rapport au
+prototype `offline-map-lab` (MapLibre).
+
+**Diagnostic (pas encore confirmé — à vérifier) :** le thème `light`
+intégré à `protomaps-leaflet` est câblé sur les noms de couches du
+schéma *basemap* standard de Protomaps (`landuse`, `water`, `roads`,
+`buildings`, `physical_line`, `places`...). Si `CVL.pmtiles` utilise un
+schéma de couches différent (probable, vu que le tuileset alimentait à
+l'origine un style MapLibre sur mesure), la plupart des règles de style
+du thème ne correspondent à aucune couche réelle du fichier — seule
+l'eau s'affiche, sans doute par coïncidence de nom de couche entre les
+deux schémas.
+
+**Bloqué en attente d'info pour corriger proprement :** il faut
+connaître le schéma réel de couches de `CVL.pmtiles` (liste des noms
+de layers, éventuellement via le viewer pmtiles.io ou `pmtiles show`
+en CLI) et/ou récupérer le `style.json` du prototype MapLibre
+`offline-map-lab`, pour construire des `PaintRule`/`LabelRule`
+`protomaps-leaflet` sur mesure au lieu du thème générique. Pas de
+correction tentée à l'aveugle tant que cette info n'est pas disponible.
+
+### Étape 5 — Règles de style sur mesure (remplace le thème générique)
+
+**Info reçue :** schéma de couches réel du tuileset (confirmé par
+inspection pmtiles.io) — `aerodrome_label`, `aeroway`, `boundary`,
+`building`, `housenumber`, `landcover`, `landuse`, `mountain_peak`,
+`park`, `place`, `poi`, `transportation`, `transportation_name`,
+`water`, `water_name`, `waterway`. Schéma proche d'OpenMapTiles. Plus
+le `style.json` MapLibre exact du prototype `offline-map-lab`.
+
+**Fait :** remplacement de `theme: 'light'` par des `paint_rules` /
+`label_rules` construites à la main dans `addBaseLayerSwitcher`,
+couche par couche, en transposant fidèlement le `style.json` fourni :
+`landuse` (fond beige clair, minzoom 6), `landcover` filtré par
+`class` (bois en vert, prairie/parc en vert clair, minzoom 10), `water`
+(bleu plein), `waterway` scindé en deux règles filtrées par
+`class`/`intermittent` (cours d'eau permanents en bleu soutenu,
+fossés/intermittents en tirets plus clairs, largeurs interpolées par
+zoom via une petite fonction `pmtilesLerp` qui reproduit les
+expressions `interpolate`/`linear` du style d'origine), `transportation`
+(routes grises), puis labels pour `waterway` (deux variantes,
+mêmes filtres que les lignes), `transportation_name` (coalesce
+`name:fr`/`name`) et `place` (idem, taille interpolée par zoom).
+Fond de carte mis à blanc (`backgroundColor:'#ffffff'`) pour
+correspondre à la couche `bg` du style d'origine.
+
+**Toujours dans le seul périmètre de `addBaseLayerSwitcher`** — rien
+d'autre modifié dans le fichier.
+
+**Deux réserves explicites, non vérifiables depuis cet environnement
+(pas d'accès réseau ici), à confirmer au test réel :**
+1. Le rendu en tirets des cours d'eau intermittents (option `dash` du
+   `LineSymbolizer`) — nom d'option supposé d'après la doc de la lib,
+   pas testé en conditions réelles.
+2. Le suivi du tracé par les libellés de cours d'eau/routes.
+   `symbol-placement:"line"` (MapLibre) n'a probablement pas
+   d'équivalent garanti dans `protomaps-leaflet` : ces libellés
+   s'afficheront vraisemblablement à un point plutôt que le long de la
+   ligne. Dégradation acceptée pour ce premier essai — à confirmer ou
+   infirmer au test, et à noter comme écart connu si c'est bien le cas.
+
+**Non couvert volontairement pour rester au plus près du style
+d'origine (qui ne les utilisait pas non plus) :** `building`,
+`housenumber`, `poi`, `aeroway`, `aerodrome_label`, `mountain_peak`,
+`boundary`, `water_name`. Pourraient être ajoutés dans un essai
+ultérieur si la fidélité au prototype MapLibre le demande.
+
+**Statut :** changement effectué, non encore revérifié en conditions
+réelles.
