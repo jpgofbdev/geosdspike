@@ -32,16 +32,26 @@
   <div class="steps">
     <strong>Marche à suivre :</strong>
     1) Réseau actif : cliquez « Télécharger et stocker ».
-    2) Une fois terminé, coupez réellement le réseau (mode avion).
-    3) Rechargez cette page (F5).
-    4) Cliquez « Charger depuis le stockage local » — sans réseau, ça
-    doit quand même afficher la carte si l'hypothèse tient.
+    2) <strong>Sans couper le réseau</strong>, cliquez tout de suite
+    « Charger depuis le stockage local » — ça permet de vérifier que la
+    couche s'affiche déjà correctement à partir du stockage local,
+    indépendamment de la question hors-ligne. Si besoin, essayez les
+    deux options de la bascule « Source à utiliser ».
+    3) Une fois que ça fonctionne en ligne, coupez réellement le réseau
+    (mode avion), sans recharger la page.
+    4) Cliquez de nouveau « Charger depuis le stockage local » — ça
+    doit donner exactement le même résultat que l'étape 2, sans réseau.
   </div>
 
   <div>
     <button id="btn-download">1. Télécharger et stocker (réseau requis)</button>
     <button id="btn-load-local">2. Charger depuis le stockage local (test hors-ligne)</button>
     <button id="btn-clear">Purger le stockage local</button>
+  </div>
+  <div style="font-size:13px; margin-bottom:8px;">
+    Source à utiliser pour la couche :
+    <label><input type="radio" name="src-mode" value="instance" checked> Instance PMTiles construite</label>
+    <label><input type="radio" name="src-mode" value="blob"> Blob brut directement</label>
   </div>
   <div id="progress"></div>
   <div id="log"></div>
@@ -185,8 +195,13 @@ document.getElementById('btn-load-local').addEventListener('click', async () => 
       window._spikeMap.eachLayer(l => window._spikeMap.removeLayer(l));
     }
     const map = window._spikeMap;
+
+    const srcMode = document.querySelector('input[name="src-mode"]:checked').value;
+    const layerUrl = srcMode === 'blob' ? blob : pmtilesInstance;
+    log('Source transmise à leafletLayer : ' + (srcMode === 'blob' ? 'Blob brut' : 'instance PMTiles'));
+
     const layer = P.leafletLayer({
-      url: pmtilesInstance, // on passe l'instance déjà construite plutôt qu'une URL
+      url: layerUrl,
       paintRules: [
         { dataLayer: 'water', symbolizer: new P.PolygonSymbolizer({ fill: '#a0c8f0' }) },
         { dataLayer: 'transportation', symbolizer: new P.LineSymbolizer({ color: '#888', width: 1 }) }
@@ -194,6 +209,20 @@ document.getElementById('btn-load-local').addEventListener('click', async () => 
       labelRules: [],
       backgroundColor: '#ffffff'
     });
+
+    // Compteurs d'événements de tuiles : signal concret indépendant du
+    // rendu visuel, pour savoir si la couche essaie/réussit/échoue à
+    // charger des tuiles, même si rien ne s'affiche à l'écran.
+    let loaded = 0, errored = 0;
+    layer.on('tileload', () => { loaded++; });
+    layer.on('tileerror', e => { errored++; log('  tileerror : ' + (e && e.error)); });
+    setTimeout(() => {
+      log(`Après 3s : ${loaded} tuile(s) chargée(s), ${errored} en erreur.`);
+      if (loaded === 0 && errored === 0) {
+        log('⚠ Aucun événement de tuile du tout — la couche ne semble pas essayer de charger quoi que ce soit avec cette source. Essayez l\'autre option (Blob brut / instance PMTiles) ci-dessus.');
+      }
+    }, 3000);
+
     layer.addTo(map);
     map.invalidateSize();
     log('✅ Couche ajoutée à la carte — si des routes/de l\'eau s\'affichent ci-dessous SANS réseau, l\'hypothèse est validée.');

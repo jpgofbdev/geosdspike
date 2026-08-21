@@ -575,3 +575,30 @@ un `Blob` IndexedDB, sans réseau). Il ne restait qu'un bug d'affichage
 dans la page de test elle-même.
 
 **Statut :** correctif appliqué, en attente de re-test.
+
+### Étape 16 — Isoler le problème : test en ligne d'abord
+
+**Suggestion pertinente reçue :** tester l'affichage de la couche
+construite depuis le stockage local **sans couper le réseau au
+préalable**, pour isoler si le problème vient du hors-ligne en tant
+que tel ou du branchement `Blob`/`PMTiles`/`leafletLayer` (qui reste
+une supposition non vérifiée, comme `paintRules`/`labelRules`
+avant lui — l'option exacte pour transmettre une source locale à
+`leafletLayer` n'est pas documentée avec certitude).
+
+**Ajouté à `test-precache.html` :**
+- Marche à suivre revue : test en ligne d'abord (télécharger, puis
+  charger depuis le stockage local sans couper le réseau), coupure
+  réseau ensuite pour confirmer que ça donne le même résultat.
+- Bascule pour choisir la source transmise à `leafletLayer` : instance
+  `PMTiles` déjà construite (comportement précédent) vs `Blob` brut
+  directement — les deux sont plausibles selon les cas d'usage
+  généralement documentés pour ce type de lib, aucune confirmée pour
+  cette version précise sans test.
+- Compteurs d'événements `tileload`/`tileerror` sur la couche, avec un
+  message après 3 secondes si aucun événement de tuile n'a été détecté
+  du tout — signal concret indépendant du rendu visuel, pour savoir si
+  la couche essaie ne serait-ce que de charger des tuiles.
+
+**Statut :** en attente du résultat (test en ligne d'abord, avec les
+deux options de la bascule si besoin).
