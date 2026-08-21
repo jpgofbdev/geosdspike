@@ -354,3 +354,137 @@ réserves de l'étape 5 (rendu des tirets `dash`, libellés qui ne
 suivront probablement pas le tracé des lignes) restent d'actualité et
 sont les prochains points à observer une fois l'affichage de base
 confirmé.
+
+### Étape 9 — Confirmation : le rendu fonctionne
+
+**Observé (test réel) :** rendu conforme aux attentes — routes en
+gris, occupation du sol en vert clair, cours d'eau en bleu avec
+distinction visible entre tracé principal et affluents, et **les
+libellés (L'Yèvre, Canal de Berry, Le Moulon...) suivent bien le tracé
+des cours d'eau**, contrairement à la réserve exprimée à l'étape 5 —
+`TextSymbolizer` de `protomaps-leaflet` gère donc le placement le long
+des lignes mieux qu'anticipé, au moins pour ce cas d'usage. Point 1 du
+spike (rendu correct du fond une fois sélectionné) validé sur cette
+zone/ce niveau de zoom.
+
+**Reste à vérifier explicitement (voir points 2 à 5 du spike, en tête
+de ce document) :**
+- Le rendu en tirets des cours d'eau intermittents (pas nécessairement
+  présents dans la zone visible sur cette capture — à confirmer sur
+  une zone qui en contient).
+- Point 2 — cohabitation avec `markersLayer` : cliquer sur la carte
+  avec ce fond actif, vérifier que la popup/le formulaire de saisie
+  s'ouvrent et fonctionnent normalement par-dessus.
+- Point 3 — mode avion, une fois le fond chargé en ligne.
+- Point 4 — poids/temps de chargement sur tablette réelle.
+- Point 5 — fidélité visuelle fine vs `offline-map-lab` (comparaison
+  côte à côte, au-delà du fait que "ça ressemble" globalement).
+
+### Étape 10 — Point 2 validé
+
+**Observé (test réel) :** clic sur la carte avec le fond PMTiles actif
+→ la modale de saisie (thématique, sous-type, champs, autocomplétion
+commune) s'ouvre normalement par-dessus le fond vectoriel, exactement
+comme avec les autres fonds. Aucun conflit détecté entre
+`protomaps-leaflet` et `markersLayer`/les gestionnaires de clic
+existants.
+
+**Bilan des 5 points du spike à ce stade :**
+1. ✅ Rendu correct du fond une fois sélectionné (étape 9).
+2. ✅ Cohabitation avec `markersLayer`, popup, formulaire (cette étape).
+3. ⏳ Comportement en coupure réseau effective (mode avion) — pas
+   encore testé.
+4. ⏳ Poids / mode de chargement compatibles avec un usage tablette —
+   pas encore testé.
+5. ⏳ Fidélité visuelle fine vs `offline-map-lab` — validée
+   globalement à l'étape 9, pas encore comparée en détail.
+
+### Étape 11 — Point 3 : le mode avion révèle l'absence de pré-cache
+
+**Observé (test réel, mode avion effectif) :** une fois la connexion
+coupée, seules les tuiles déjà visitées en ligne restent affichées —
+toute zone non parcourue au préalable reste vide.
+
+**Analyse :** `protomaps-leaflet` lit `CVL.pmtiles` par requêtes HTTP
+en plages d'octets (`206 Partial Content`, déjà observés dans l'onglet
+Réseau aux étapes précédentes), et ne récupère que ce dont il a besoin
+au fur et à mesure du déplacement sur la carte — comportement paresseux
+par nature, sans mécanisme de pré-téléchargement ni de mise en cache
+explicite dans la configuration actuelle. Le cache HTTP par défaut du
+navigateur peut retenir une partie de ce qui a déjà transité, mais rien
+ne garantit sa persistance ni sa couverture — ce n'est pas prévu pour
+un usage hors connexion.
+
+**Conséquence pour le point 3 : ⚠️ ne fonctionne pas nativement.** Pour
+un usage terrain réel — un agent qui se déplace dans des zones pas
+forcément visitées en ligne au préalable — ce comportement ne suffit
+pas : le fond doit être disponible sur des zones jamais parcourues en
+ligne, pas seulement sur celles déjà vues.
+
+**Ce qu'il faudrait pour un vrai support hors connexion (non
+implémenté à ce stade, nécessite une décision avant de poursuivre) :**
+- Un mécanisme de mise en cache explicite — typiquement un Service
+  Worker + Cache API — capable de conserver tout ou partie du fichier
+  `.pmtiles` indépendamment du cache HTTP incident du navigateur.
+- Une étape assumée de préparation avant tournée (« télécharger cette
+  zone pour hors-ligne »), plutôt que de compter sur la navigation
+  effective de l'agent pour peupler le cache.
+- Ceci rejoint directement les points 3 et 4 du README-spike.md
+  d'origine (poids/mode de distribution du fichier), qui anticipaient
+  déjà cette question de fond.
+
+**Statut :** constat établi, pas de correctif tenté à ce stade — c'est
+un choix d'architecture (pas un bug ponctuel), à trancher avant
+d'aller plus loin : soit explorer un mécanisme de pré-cache comme
+prochaine étape du spike, soit consigner ce point comme limitation
+connue dans le verdict final.
+
+### Étape 12 — Test de faisabilité isolé : pré-cache via IndexedDB
+
+**Décision (suite à discussion) :** explorer un module de gestion
+explicite du fond hors-ligne (une région PMTiles entière téléchargée à
+la demande, gérée par l'utilisateur — pas un simple cache HTTP
+incident). Stockage retenu pour amorcer les tests : **IndexedDB**
+(plutôt que Cache Storage), sur la base d'un contexte 100% Chrome /
+Chrome-PWA sur Android annoncé par l'équipe — ce qui réduit fortement
+les risques historiquement associés à IndexedDB + gros `Blob` (surtout
+documentés sur WebKit/Safari, hors périmètre ici). Cache Storage
+resterait le choix de repli si le test ci-dessous échoue et qu'il faut
+basculer vers un Service Worker interceptant des requêtes `Range`.
+
+**Avant de construire l'interface finale (téléchargement piloté,
+jauge d'espace, purge...) :** un test minimal et isolé, dans un fichier
+séparé, **`test-precache.html`**, à la racine du dépôt — ne touche à
+rien d'autre. Objectif unique : vérifier que `protomaps-leaflet` peut
+construire une couche à partir d'un fichier `.pmtiles` stocké
+localement (`Blob` en IndexedDB), sans requête réseau vers le fichier
+d'origine.
+
+**Ce que fait la page :**
+1. Bouton « Télécharger et stocker » : télécharge `CVL.pmtiles` en
+   entier (avec suivi de progression), le stocke en IndexedDB
+   (`geosd-spike-precache` / store `regions`, clé `CVL`), demande un
+   stockage persistant (`navigator.storage.persist()`), affiche le
+   quota (`navigator.storage.estimate()`).
+2. Bouton « Charger depuis le stockage local » : relit le `Blob` en
+   IndexedDB, essaie plusieurs façons de construire une instance
+   `protomapsL.PMTiles` à partir de ce `Blob` (aucune ne pouvant être
+   garantie sans test réel, cf. déjà l'épisode `paintRules`/
+   `labelRules`) — logue clairement laquelle fonctionne, ou affiche le
+   code source du constructeur si aucune ne passe, pour lecture
+   directe plutôt que nouvelle supposition à l'aveugle.
+3. Si une instance est obtenue, tente d'afficher une carte minimale
+   (eau + routes) avec cette source locale.
+4. Bouton « Purger » pour repartir de zéro.
+
+**Marche à suivre pour le test réel :** télécharger avec le réseau
+actif, couper réellement le réseau (mode avion), recharger la page,
+puis « Charger depuis le stockage local ». Si la carte s'affiche à ce
+moment-là, l'hypothèse (lecture 100% locale, sans Service Worker) est
+validée et on peut construire l'interface finale dessus.
+
+**Non modifié :** aucun fichier existant du spike n'est touché par
+cette étape — page entièrement à part, jetable si l'hypothèse échoue.
+
+**Statut :** en attente du test réel (pas d'accès réseau depuis cet
+environnement pour le faire en amont).

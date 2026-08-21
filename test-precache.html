@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPIKE — Test faisabilité pré-cache PMTiles (IndexedDB)</title>
+<style>
+  body{ font-family:system-ui, sans-serif; margin:0; padding:16px; color:#1a2e22; background:#f3f4ee; }
+  h1{ font-size:16px; margin:0 0 4px; }
+  p.sub{ font-size:13px; color:#3f5747; margin:0 0 18px; }
+  .banner{ background:#f3e4c6; border:1px solid #c9a768; color:#6b4a13; font-size:13px; padding:10px 14px; border-radius:6px; margin-bottom:18px; line-height:1.5; }
+  .steps{ font-size:13px; line-height:1.6; color:#3f5747; margin-bottom:18px; }
+  button{ font-family:inherit; font-size:13px; font-weight:600; padding:9px 14px; border-radius:4px; border:1px solid #1a2e22; background:#fff; color:#1a2e22; cursor:pointer; margin:0 8px 8px 0; }
+  button:hover{ background:#1a2e22; color:#fff; }
+  button:disabled{ opacity:.4; cursor:not-allowed; }
+  #progress{ font-family:ui-monospace, monospace; font-size:12px; margin:6px 0; }
+  #log{ font-family:ui-monospace, monospace; font-size:11px; background:#fbfbf8; border:1px solid #c7cabb; border-radius:4px; padding:10px; white-space:pre-wrap; max-height:260px; overflow:auto; margin-bottom:16px; }
+  #map{ width:100%; height:360px; border:1px solid #c7cabb; border-radius:6px; background:#fff; }
+</style>
+</head>
+<body>
+  <h1>SPIKE — Faisabilité du pré-cache PMTiles</h1>
+  <p class="sub">Page isolée, hors de l'application GeoSD — teste uniquement : télécharger un .pmtiles entier, le stocker en IndexedDB, puis le relire et l'afficher sans réseau.</p>
+
+  <div class="banner">
+    ⚠ Ne fait pas partie de GeoSD. À utiliser uniquement pour valider ou
+    invalider l'hypothèse avant de construire l'interface finale (voir
+    README-spike.md, étape 12).
+  </div>
+
+  <div class="steps">
+    <strong>Marche à suivre :</strong>
+    1) Réseau actif : cliquez « Télécharger et stocker ».
+    2) Une fois terminé, coupez réellement le réseau (mode avion).
+    3) Rechargez cette page (F5).
+    4) Cliquez « Charger depuis le stockage local » — sans réseau, ça
+    doit quand même afficher la carte si l'hypothèse tient.
+  </div>
+
+  <div>
+    <button id="btn-download">1. Télécharger et stocker (réseau requis)</button>
+    <button id="btn-load-local">2. Charger depuis le stockage local (test hors-ligne)</button>
+    <button id="btn-clear">Purger le stockage local</button>
+  </div>
+  <div id="progress"></div>
+  <div id="log"></div>
+  <div id="map"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/protomaps-leaflet@2/dist/protomaps-leaflet.js"></script>
+<script>
+// Fichier réel visé par le spike. Pour itérer plus vite pendant les
+// essais (300 Mo est long à retélécharger à chaque test), on peut
+// pointer temporairement vers une région plus petite du même serveur,
+// par ex. COR.pmtiles (Corse), en changeant uniquement cette ligne.
+const REGION_URL = 'https://tiles.jpg-cvl-dev.fr/tiles/CVL.pmtiles';
+const REGION_KEY = 'CVL';
+
+const DB_NAME = 'geosd-spike-precache';
+const STORE_NAME = 'regions';
+
+const logEl = document.getElementById('log');
+const progressEl = document.getElementById('progress');
+function log(msg) {
+  console.log(msg);
+  logEl.textContent += msg + '\n';
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbPut(key, value) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function idbGet(key) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbClear() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+document.getElementById('btn-download').addEventListener('click', async () => {
+  log('--- Téléchargement de ' + REGION_URL + ' ---');
+  try {
+    const resp = await fetch(REGION_URL);
+    if (!resp.ok) { log('Échec HTTP : ' + resp.status); return; }
+    const total = Number(resp.headers.get('content-length')) || 0;
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      const pct = total ? Math.round(received / total * 100) : '?';
+      progressEl.textContent = `${(received / 1e6).toFixed(1)} Mo` + (total ? ` / ${(total / 1e6).toFixed(1)} Mo (${pct}%)` : '');
+    }
+    const blob = new Blob(chunks);
+    log('Téléchargement terminé : ' + (blob.size / 1e6).toFixed(1) + ' Mo. Stockage en IndexedDB...');
+    await idbPut(REGION_KEY, blob);
+    log('✅ Stocké dans IndexedDB sous la clé "' + REGION_KEY + '".');
+    if (navigator.storage && navigator.storage.persist) {
+      const persisted = await navigator.storage.persist();
+      log('Stockage persistant demandé : ' + (persisted ? 'accordé' : 'refusé par le navigateur'));
+    }
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      log(`Quota : ${(est.usage / 1e6).toFixed(1)} Mo utilisés / ${(est.quota / 1e6).toFixed(1)} Mo alloués`);
+    }
+  } catch (err) {
+    log('❌ Erreur pendant le téléchargement : ' + err);
+  }
+});
+
+document.getElementById('btn-clear').addEventListener('click', async () => {
+  await idbClear();
+  log('--- Stockage local purgé ---');
+});
+
+document.getElementById('btn-load-local').addEventListener('click', async () => {
+  log('--- Lecture depuis IndexedDB (aucune requête réseau vers ' + REGION_URL + ' attendue) ---');
+  const blob = await idbGet(REGION_KEY);
+  if (!blob) { log('❌ Rien en stockage local — faites d\'abord "Télécharger et stocker".'); return; }
+  log('Blob récupéré : ' + (blob.size / 1e6).toFixed(1) + ' Mo. Tentative de construction de la couche...');
+
+  const P = protomapsL;
+  const attempts = [
+    {
+      label: 'new P.PMTiles(blob) directement',
+      build: () => new P.PMTiles(blob)
+    },
+    {
+      label: 'new P.PMTiles(new File([blob], "region.pmtiles"))',
+      build: () => new P.PMTiles(new File([blob], 'region.pmtiles'))
+    }
+  ];
+
+  let pmtilesInstance = null;
+  for (const attempt of attempts) {
+    try {
+      pmtilesInstance = attempt.build();
+      log('✅ Réussi : ' + attempt.label);
+      break;
+    } catch (err) {
+      log('❌ Échec (' + attempt.label + ') : ' + err);
+    }
+  }
+
+  if (!pmtilesInstance) {
+    log('Aucune des approches essayées n\'a fonctionné. Inspection du constructeur PMTiles pour comprendre ce qu\'il attend :');
+    log(String(P.PMTiles));
+    return;
+  }
+
+  try {
+    const map = L.map('map').setView([47.08, 2.4], 10); // Cher, cf. territoire par défaut de GeoSD
+    const layer = P.leafletLayer({
+      url: pmtilesInstance, // on passe l'instance déjà construite plutôt qu'une URL
+      paintRules: [
+        { dataLayer: 'water', symbolizer: new P.PolygonSymbolizer({ fill: '#a0c8f0' }) },
+        { dataLayer: 'transportation', symbolizer: new P.LineSymbolizer({ color: '#888', width: 1 }) }
+      ],
+      labelRules: [],
+      backgroundColor: '#ffffff'
+    });
+    layer.addTo(map);
+    log('✅ Couche ajoutée à la carte — si des routes/de l\'eau s\'affichent ci-dessous SANS réseau, l\'hypothèse est validée.');
+  } catch (err) {
+    log('❌ Erreur à la création de la couche Leaflet : ' + err);
+  }
+});
+</script>
+</body>
+</html>
