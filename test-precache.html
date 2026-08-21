@@ -203,8 +203,9 @@ document.getElementById('btn-load-local').addEventListener('click', async () => 
     const layer = P.leafletLayer({
       url: layerUrl,
       paintRules: [
-        { dataLayer: 'water', symbolizer: new P.PolygonSymbolizer({ fill: '#a0c8f0' }) },
-        { dataLayer: 'transportation', symbolizer: new P.LineSymbolizer({ color: '#888', width: 1 }) }
+        { dataLayer: 'water', symbolizer: new P.PolygonSymbolizer({ fill: '#ff00ff', opacity: 1 }) },
+        { dataLayer: 'transportation', symbolizer: new P.LineSymbolizer({ color: '#ff0000', width: 6 }) },
+        { dataLayer: 'landuse', symbolizer: new P.PolygonSymbolizer({ fill: '#ffff00', opacity: 1 }) }
       ],
       labelRules: [],
       backgroundColor: '#ffffff'
