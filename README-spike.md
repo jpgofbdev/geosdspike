@@ -734,3 +734,32 @@ Plan A ne nécessite aucune modification du code qui utilise
 **Statut :** en attente du test réel (déposer `sw-precache.js` à la
 racine du dépôt, à côté de `test-precache.html`, puis suivre la
 nouvelle marche à suivre affichée en haut de la page).
+
+### Étape 21 — Le Service Worker n'a jamais pris le contrôle de la page
+
+**Observé (test réel, deux captures) :** en ligne, la carte s'affiche
+parfaitement (routes rouges, occupation du sol jaune, eau magenta —
+couleurs de diagnostic de l'étape 16, rendu confirmé). Hors ligne,
+carte blanche, avec `net::ERR_INTERNET_DISCONNECTED` sur la requête
+vers `CVL.pmtiles`. Dans les deux cas, le log affiche « Contrôle de
+cette page par un Service Worker : NON ».
+
+**Diagnostic :** le Service Worker n'a jamais pris le contrôle de la
+page dans cette session de test — ni en ligne, ni hors ligne. En ligne,
+ça ne se voyait pas (la requête partait normalement vers le réseau,
+qui répondait). Hors ligne, faute de contrôle, la requête part
+directement vers un réseau absent au lieu d'être interceptée et servie
+depuis IndexedDB — d'où l'échec. `self.clients.claim()` est censé
+donner le contrôle à la page immédiatement après activation sans
+recharger, mais ça s'est montré peu fiable en pratique ici.
+
+**Corrigé dans `test-precache.html` :**
+- Bandeau d'état toujours visible en haut de page (« Service Worker :
+  actif / pas en contrôle »), mis à jour en continu via l'événement
+  `controllerchange`, plutôt qu'un simple message noyé dans le journal.
+- Consigne renforcée : recharger manuellement (F5) après avoir cliqué
+  « Activer le Service Worker », et vérifier que le bandeau passe au
+  vert avant de poursuivre — ne plus compter sur `clients.claim()` seul.
+
+**Statut :** en attente du nouveau test, avec vérification explicite du
+bandeau vert avant de couper le réseau.

@@ -29,12 +29,18 @@
     README-spike.md, étape 12).
   </div>
 
+  <div id="sw-status" style="font-size:13px; font-weight:600; margin-bottom:10px; padding:6px 10px; border-radius:4px; background:#eee;">
+    Service Worker : vérification en cours...
+  </div>
+
   <div class="steps">
     <strong>Marche à suivre :</strong>
     1) Réseau actif : cliquez « Télécharger et stocker », puis
     « 3. Activer le Service Worker ».
-    2) Rechargez la page une fois (uniquement nécessaire pour la toute
-    première activation, pour que le Service Worker prenne le contrôle).
+    2) <strong>Rechargez la page manuellement (F5)</strong> — le bandeau
+    ci-dessous doit passer au vert (« EN CONTRÔLE de cette page »)
+    avant de continuer ; sans ça, le reste du test ne peut pas
+    fonctionner hors ligne.
     3) Avec la source « Via Service Worker » sélectionnée (par défaut),
     cliquez « 2. Charger depuis le stockage local » — ça doit s'afficher
     normalement, en ligne.
@@ -116,6 +122,29 @@ async function idbClear() {
   });
 }
 
+function updateSwStatus() {
+  const el = document.getElementById('sw-status');
+  if (!('serviceWorker' in navigator)) {
+    el.textContent = 'Service Worker : non supporté par ce navigateur.';
+    el.style.background = '#f6d6d0';
+    return;
+  }
+  if (navigator.serviceWorker.controller) {
+    el.textContent = '✅ Service Worker actif et EN CONTRÔLE de cette page — les requêtes vers CVL.pmtiles seront interceptées.';
+    el.style.background = '#cfe8cf';
+  } else {
+    el.textContent = '⚠ Service Worker PAS en contrôle de cette page pour l\'instant — le mode "Via Service Worker" ne fonctionnera pas hors ligne tant que ce n\'est pas ✅. Cliquez "3. Activer le Service Worker" PUIS rechargez la page manuellement (F5), même après le tout premier essai.';
+    el.style.background = '#f3e4c6';
+  }
+}
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    log('🔄 controllerchange détecté.');
+    updateSwStatus();
+  });
+}
+updateSwStatus();
+
 document.getElementById('btn-register-sw').addEventListener('click', async () => {
   if (!('serviceWorker' in navigator)) { log('❌ Service Worker non supporté par ce navigateur.'); return; }
   try {
@@ -123,6 +152,7 @@ document.getElementById('btn-register-sw').addEventListener('click', async () =>
     log('Service Worker enregistré (scope : ' + reg.scope + ').');
     await navigator.serviceWorker.ready;
     log('Service Worker prêt. Contrôle actuel de cette page : ' + (navigator.serviceWorker.controller ? 'OUI' : 'NON (peut nécessiter un rechargement une seule fois après le tout premier enregistrement)'));
+    updateSwStatus();
   } catch (err) {
     log('❌ Échec d\'enregistrement du Service Worker : ' + err);
   }
