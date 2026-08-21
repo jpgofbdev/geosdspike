@@ -602,3 +602,74 @@ avant lui — l'option exacte pour transmettre une source locale à
 
 **Statut :** en attente du résultat (test en ligne d'abord, avec les
 deux options de la bascule si besoin).
+
+### Étape 17 — Ça charge (16 tuiles) mais avec des erreurs de cache internes
+
+**Observé (test réel, en ligne, source = instance PMTiles) :** de
+nombreuses erreurs `TypeError: source.getKey is not a function`,
+provenant de `SharedPromiseCache.getHeader` à l'intérieur de la
+bibliothèque `pmtiles` embarquée dans `protomaps-leaflet` — mais
+malgré ces erreurs, le compteur de diagnostic affiche finalement
+**16 tuiles chargées, 0 en erreur de tuile**.
+
+**Diagnostic :** la couche interne de cache d'en-tête PMTiles s'attend
+à ce que l'objet `source` expose des méthodes (`getKey` notamment,
+probablement utilisée pour clé de cache) — un `Blob` brut stocké tel
+quel dans notre instance ne les a pas. L'optimisation de cache échoue
+donc silencieusement (avec erreur loguée) à chaque tentative, mais la
+lecture des données semble malgré tout aboutir par un autre chemin
+— cohérent avec le fait que des tuiles finissent par charger. Piste
+de performance à surveiller (relecture/re-parsing redondant de
+l'en-tête à chaque tuile ?) plutôt que blocage fonctionnel, à confirmer
+une fois l'affichage visuel validé.
+
+**Prochain test :** confirmer si la carte affiche effectivement du
+contenu malgré ces erreurs, et comparer avec la bascule « Blob brut »
+(passer directement le `Blob` à `leafletLayer` plutôt qu'une instance
+`PMTiles` pré-construite à la main) — pourrait laisser la bibliothèque
+envelopper elle-même la source correctement et éviter ces erreurs.
+
+**Statut :** en attente de confirmation visuelle + test de la variante
+Blob brut.
+
+### Étape 18 — Nouvel échec, deux méthodes internes différentes en cause
+
+**Observé (test réel) :** aucune des deux options de la bascule
+n'affiche quoi que ce soit, chacune avec une erreur interne différente :
+- Instance PMTiles : `source.getKey is not a function`
+  (`SharedPromiseCache.getHeader`).
+- Blob brut : `this.p.getZxy is not a function`
+  (`PmtilesSource.get`).
+
+**Analyse :** deux chemins de code différents dans la bibliothèque,
+deux méthodes manquantes différentes sur l'objet source interne — mais
+le même symptôme final. Ce n'est plus une question de "quel paramètre
+passer" : le support de la lecture depuis un `Blob`/`File` local, dans
+cette bibliothèque telle que chargée, ne fonctionne pas correctement à
+un niveau qu'on ne peut pas corriger depuis le code applicatif. Le
+compteur "X tuiles chargées, 0 en erreur" du test est probablement
+trompeur : Leaflet marque une tuile "chargée" dès que la fonction de
+dessin s'est exécutée, même si elle a échoué silencieusement à
+l'intérieur — pas une preuve que quelque chose s'est réellement
+dessiné.
+
+**Décision :** avant de basculer sur l'architecture de repli (Service
+Worker interceptant les requêtes `Range`, plus lourde à construire),
+un dernier essai à coût quasi nul : épingler `protomaps-leaflet` à une
+version précise plutôt que le tag flottant `@2` utilisé jusqu'ici, qui
+pouvait pointer vers une version plus récente que celle testée en
+premier (et donc potentiellement une régression introduite entretemps
+sur ce point précis).
+
+**Fait :** `test-precache.html` charge maintenant
+`protomaps-leaflet@2.0.0` (version figée) au lieu de `@2`. Choix de
+version non vérifié — première version stable de la branche 2.x,
+hypothèse raisonnable plutôt que certitude. Si le CDN renvoie une 404
+sur ce numéro précis, il faudra regarder quelles versions existent
+réellement (jsdelivr/unpkg listent les versions disponibles d'un
+paquet si on navigue à la racine).
+
+**Statut :** en attente du test avec la version épinglée. Si ça
+échoue aussi, on passera à l'architecture Service Worker (Plan A) comme
+convenu, plutôt que de continuer à deviner des combinaisons de
+paramètres.
