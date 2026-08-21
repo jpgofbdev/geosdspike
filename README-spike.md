@@ -488,3 +488,90 @@ cette étape — page entièrement à part, jetable si l'hypothèse échoue.
 
 **Statut :** en attente du test réel (pas d'accès réseau depuis cet
 environnement pour le faire en amont).
+
+### Étape 13 — Protocole de test corrigé : ne pas recharger la page
+
+**Observé :** après coupure réseau, F5 échoue purement et simplement —
+la page ne se recharge pas du tout.
+
+**Diagnostic :** confusion entre deux problèmes distincts. `Blob`
+stocké en IndexedDB (les *données* cartographiques) est bien un sujet
+à part du cache de *l'application elle-même* (le HTML de
+`test-precache.html`, `leaflet.js`, `protomaps-leaflet.js` chargés
+depuis un CDN) — rien de tout ça n'est mis en cache par la page de
+test, donc un F5 hors connexion échoue avant même d'atteindre le code
+qui lit IndexedDB. Ce n'est pas un défaut de l'hypothèse testée.
+
+**Protocole corrigé :** ne pas recharger la page après la coupure
+réseau. Garder l'onglet ouvert (HTML/JS déjà en mémoire), couper le
+réseau, cliquer directement sur « 2. Charger depuis le stockage
+local ». Correspond d'ailleurs mieux au cas d'usage terrain le plus
+probable : l'agent ouvre l'application le matin avec du réseau, puis
+perd la connexion en cours de tournée sans fermer l'onglet.
+
+**Question distincte, mise de côté pour l'instant :** le cas "tablette
+éteinte toute la nuit / onglet fermé, rouvert sans réseau" nécessite en
+plus un cache de l'application elle-même (Service Worker/PWA pour
+HTML/JS/CSS) — un sujet à part entière, hors du périmètre de ce spike
+(qui porte sur le fond de carte), à noter comme question ouverte pour
+une éventuelle suite si GeoSD doit un jour fonctionner dès l'ouverture
+sans aucun réseau.
+
+**Statut :** en attente du nouveau test (sans rechargement de page).
+
+### Étape 14 — Résultat positif : `new PMTiles(blob)` fonctionne
+
+**Observé (test réel) :** premier clic sur « Charger depuis le
+stockage local » → `Blob` récupéré (350.8 Mo), `new P.PMTiles(blob)`
+réussi directement (pas besoin de l'essai de repli `File`), couche
+ajoutée à la carte sans erreur. Un second clic (sur le même
+chargement) a échoué avec `Map container is already initialized` —
+bug de la page de test elle-même (elle recréait une carte Leaflet dans
+le même conteneur au lieu de réutiliser l'existante), sans rapport
+avec PMTiles/IndexedDB. Corrigé dans `test-precache.html` (réutilise
+la carte existante si déjà créée).
+
+**Portée de la validation :** l'hypothèse centrale — lire un
+`.pmtiles` stocké en `Blob` local (IndexedDB) directement via
+`new protomapsL.PMTiles(blob)`, sans requête réseau ni Service Worker
+— fonctionne. Reste à confirmer avec une certitude totale que le
+réseau était bien coupé au moment de ce test précis (l'icône de la
+barre de statut Android laissait un doute) — via l'onglet Réseau des
+DevTools, filtré sur "CVL", pour vérifier qu'aucune requête n'y
+apparaît pendant le test hors-ligne.
+
+**Conséquence :** le stockage IndexedDB retenu à l'étape 12 est
+confirmé viable pour ce cas d'usage, sans avoir besoin de basculer sur
+Cache Storage + Service Worker. La prochaine étape peut être la
+construction de l'interface de gestion explicite du fond hors-ligne
+(téléchargement piloté par région, jauge d'espace avec avertissement,
+changement de région, purge) telle que discutée, directement sur cette
+base.
+
+**Statut :** validation forte, confirmation finale (réseau
+effectivement coupé) en attente.
+
+### Étape 15 — Messages OK mais carte blanche : ordre de chargement CSS
+
+**Observé (test réel, hors ligne confirmé) :** tous les messages de
+`test-precache.html` positifs (`Blob` récupéré, `PMTiles` construit,
+couche ajoutée), mais la zone de carte reste blanche.
+
+**Diagnostic :** dans `test-precache.html`, `leaflet.css` était chargé
+après `leaflet.js` (au lieu d'être dans le `<head>`). Piège classique
+de Leaflet : si la carte s'initialise avant que la feuille de style
+soit appliquée, le dimensionnement interne des tuiles est cassé, ce
+qui donne un rendu blanc/vide alors même que les données sont bien là
+— sans rapport avec PMTiles/IndexedDB. Sans lien avec l'hypothèse
+testée.
+
+**Corrigé :** `leaflet.css` déplacé dans le `<head>`, avant tout
+script. Ajout d'un appel `map.invalidateSize()` après la création de
+la couche, en filet de sécurité supplémentaire.
+
+**Portée :** cette étape confirme, avec un test réellement hors ligne
+cette fois, que l'hypothèse centrale tient (lecture de `PMTiles` depuis
+un `Blob` IndexedDB, sans réseau). Il ne restait qu'un bug d'affichage
+dans la page de test elle-même.
+
+**Statut :** correctif appliqué, en attente de re-test.

@@ -17,6 +17,7 @@
   #log{ font-family:ui-monospace, monospace; font-size:11px; background:#fbfbf8; border:1px solid #c7cabb; border-radius:4px; padding:10px; white-space:pre-wrap; max-height:260px; overflow:auto; margin-bottom:16px; }
   #map{ width:100%; height:360px; border:1px solid #c7cabb; border-radius:6px; background:#fff; }
 </style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 </head>
 <body>
   <h1>SPIKE — Faisabilité du pré-cache PMTiles</h1>
@@ -47,7 +48,6 @@
   <div id="map"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/protomaps-leaflet@2/dist/protomaps-leaflet.js"></script>
 <script>
 // Fichier réel visé par le spike. Pour itérer plus vite pendant les
@@ -179,7 +179,12 @@ document.getElementById('btn-load-local').addEventListener('click', async () => 
   }
 
   try {
-    const map = L.map('map').setView([47.08, 2.4], 10); // Cher, cf. territoire par défaut de GeoSD
+    if (!window._spikeMap) {
+      window._spikeMap = L.map('map').setView([47.08, 2.4], 10); // Cher, cf. territoire par défaut de GeoSD
+    } else {
+      window._spikeMap.eachLayer(l => window._spikeMap.removeLayer(l));
+    }
+    const map = window._spikeMap;
     const layer = P.leafletLayer({
       url: pmtilesInstance, // on passe l'instance déjà construite plutôt qu'une URL
       paintRules: [
@@ -190,6 +195,7 @@ document.getElementById('btn-load-local').addEventListener('click', async () => 
       backgroundColor: '#ffffff'
     });
     layer.addTo(map);
+    map.invalidateSize();
     log('✅ Couche ajoutée à la carte — si des routes/de l\'eau s\'affichent ci-dessous SANS réseau, l\'hypothèse est validée.');
   } catch (err) {
     log('❌ Erreur à la création de la couche Leaflet : ' + err);
