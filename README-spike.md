@@ -673,3 +673,64 @@ paquet si on navigue à la racine).
 échoue aussi, on passera à l'architecture Service Worker (Plan A) comme
 convenu, plutôt que de continuer à deviner des combinaisons de
 paramètres.
+
+### Étape 19 — Conclusion : lecture directe d'un Blob non viable dans protomaps-leaflet
+
+**Observé (test réel, `protomaps-leaflet@2.0.0` épinglé) :** même erreur
+que sur le tag flottant `@2` — `this.p.getZxy is not a function` dans
+`PmtilesSource.get`, avec la variante « Blob brut ».
+
+**Conclusion :** ce n'est pas une régression liée à une version récente
+de la bibliothèque — l'échec est reproductible sur une version figée
+antérieure. La lecture directe d'un fichier `.pmtiles` local
+(`Blob`/`File`, sans URL réseau) est structurellement non fonctionnelle
+dans `protomaps-leaflet`, quelle que soit l'approche essayée
+(instance `PMTiles` pré-construite, `Blob` brut, versions différentes).
+Piste abandonnée — pas la peine de continuer à chercher une meilleure
+combinaison de paramètres sur ce chemin.
+
+**Décision :** passage à l'architecture de repli identifiée dès le
+départ de cette exploration (voir discussion précédant l'étape 12) :
+un **Service Worker** qui intercepte les requêtes réseau que `pmtiles`
+fait normalement vers `CVL.pmtiles` (des `GET` avec en-tête `Range`),
+et les sert depuis le fichier stocké localement (IndexedDB) en
+reconstruisant une réponse HTTP `206 Partial Content` à partir d'un
+`Blob.slice()` — sans jamais toucher au code de `protomaps-leaflet`
+lui-même, qui continue de croire qu'il parle au réseau normalement.
+
+**Statut :** conclusion actée, architecture de repli à construire —
+voir étape suivante.
+
+### Étape 20 — Test isolé du Service Worker (Plan A)
+
+**Fait :** `sw-precache.js`, nouveau fichier à la racine du dépôt,
+isolé — intercepte uniquement les requêtes vers
+`https://tiles.jpg-cvl-dev.fr/tiles/CVL.pmtiles`. Si une copie du
+fichier existe dans la même base IndexedDB que celle déjà utilisée par
+`test-precache.html` (nom de base/magasin/clé identiques), découpe le
+`Blob` stocké selon l'en-tête `Range` de la requête interceptée
+(`Blob.slice()`) et renvoie une vraie réponse `206 Partial Content`.
+Sinon, laisse passer vers le réseau normalement. `self.skipWaiting()` +
+`clients.claim()` pour prendre le contrôle sans attendre la fermeture
+de tous les onglets.
+
+`test-precache.html` mis à jour : bouton « 3. Activer le Service
+Worker » (enregistrement), et une troisième option dans la bascule de
+source — « Via Service Worker (URL réseau normale) », sélectionnée par
+défaut. Dans ce mode, le test ne construit plus rien à la main
+(`Blob`, instance `PMTiles`) : il transmet simplement l'URL réseau
+normale à `leafletLayer`, exactement comme le fait `geosd-themes.js`
+dans l'application principale — c'est le Service Worker qui doit faire
+tout le travail en coulisses, de façon complètement transparente pour
+le code applicatif.
+
+**Pourquoi ce plan est préférable si le test réussit :** contrairement
+au Plan B (lecture directe d'un `Blob`, abandonné à l'étape 19), le
+Plan A ne nécessite aucune modification du code qui utilise
+`protomaps-leaflet` — ni dans ce test, ni plus tard dans
+`geosd-themes.js`. Toute la complexité reste confinée dans
+`sw-precache.js`, invisible du reste de l'application.
+
+**Statut :** en attente du test réel (déposer `sw-precache.js` à la
+racine du dépôt, à côté de `test-precache.html`, puis suivre la
+nouvelle marche à suivre affichée en haut de la page).

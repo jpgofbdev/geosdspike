@@ -31,27 +31,29 @@
 
   <div class="steps">
     <strong>Marche à suivre :</strong>
-    1) Réseau actif : cliquez « Télécharger et stocker ».
-    2) <strong>Sans couper le réseau</strong>, cliquez tout de suite
-    « Charger depuis le stockage local » — ça permet de vérifier que la
-    couche s'affiche déjà correctement à partir du stockage local,
-    indépendamment de la question hors-ligne. Si besoin, essayez les
-    deux options de la bascule « Source à utiliser ».
-    3) Une fois que ça fonctionne en ligne, coupez réellement le réseau
-    (mode avion), sans recharger la page.
-    4) Cliquez de nouveau « Charger depuis le stockage local » — ça
-    doit donner exactement le même résultat que l'étape 2, sans réseau.
+    1) Réseau actif : cliquez « Télécharger et stocker », puis
+    « 3. Activer le Service Worker ».
+    2) Rechargez la page une fois (uniquement nécessaire pour la toute
+    première activation, pour que le Service Worker prenne le contrôle).
+    3) Avec la source « Via Service Worker » sélectionnée (par défaut),
+    cliquez « 2. Charger depuis le stockage local » — ça doit s'afficher
+    normalement, en ligne.
+    4) Coupez réellement le réseau (mode avion), sans recharger.
+    5) Cliquez de nouveau « 2. Charger depuis le stockage local » — ça
+    doit donner exactement le même résultat, sans réseau.
   </div>
 
   <div>
     <button id="btn-download">1. Télécharger et stocker (réseau requis)</button>
     <button id="btn-load-local">2. Charger depuis le stockage local (test hors-ligne)</button>
     <button id="btn-clear">Purger le stockage local</button>
+    <button id="btn-register-sw">3. Activer le Service Worker</button>
   </div>
   <div style="font-size:13px; margin-bottom:8px;">
     Source à utiliser pour la couche :
-    <label><input type="radio" name="src-mode" value="instance" checked> Instance PMTiles construite</label>
+    <label><input type="radio" name="src-mode" value="instance"> Instance PMTiles construite</label>
     <label><input type="radio" name="src-mode" value="blob"> Blob brut directement</label>
+    <label><input type="radio" name="src-mode" value="sw" checked> Via Service Worker (URL réseau normale)</label>
   </div>
   <div id="progress"></div>
   <div id="log"></div>
@@ -114,6 +116,18 @@ async function idbClear() {
   });
 }
 
+document.getElementById('btn-register-sw').addEventListener('click', async () => {
+  if (!('serviceWorker' in navigator)) { log('❌ Service Worker non supporté par ce navigateur.'); return; }
+  try {
+    const reg = await navigator.serviceWorker.register('sw-precache.js');
+    log('Service Worker enregistré (scope : ' + reg.scope + ').');
+    await navigator.serviceWorker.ready;
+    log('Service Worker prêt. Contrôle actuel de cette page : ' + (navigator.serviceWorker.controller ? 'OUI' : 'NON (peut nécessiter un rechargement une seule fois après le tout premier enregistrement)'));
+  } catch (err) {
+    log('❌ Échec d\'enregistrement du Service Worker : ' + err);
+  }
+});
+
 document.getElementById('btn-download').addEventListener('click', async () => {
   log('--- Téléchargement de ' + REGION_URL + ' ---');
   try {
@@ -154,40 +168,41 @@ document.getElementById('btn-clear').addEventListener('click', async () => {
 });
 
 document.getElementById('btn-load-local').addEventListener('click', async () => {
-  log('--- Lecture depuis IndexedDB (aucune requête réseau vers ' + REGION_URL + ' attendue) ---');
-  const blob = await idbGet(REGION_KEY);
-  if (!blob) { log('❌ Rien en stockage local — faites d\'abord "Télécharger et stocker".'); return; }
-  log('Blob récupéré : ' + (blob.size / 1e6).toFixed(1) + ' Mo. Tentative de construction de la couche...');
+  const srcMode = document.querySelector('input[name="src-mode"]:checked').value;
+
+  let layerUrl, pmtilesInstance = null, blob = null;
+
+  if (srcMode === 'sw') {
+    // Mode Service Worker : on ne touche pas à IndexedDB nous-mêmes ici
+    // ni à PMTiles/Blob — on transmet l'URL réseau normale, exactement
+    // comme le fait geosd-themes.js. Si le Service Worker est bien
+    // actif et qu'une copie locale existe, c'est lui qui interceptera
+    // silencieusement les requêtes Range et répondra depuis le Blob
+    // stocké — sans qu'aucun code ici n'ait besoin de le savoir.
+    log('--- Mode Service Worker : transmission de l\'URL réseau normale ---');
+    log('Contrôle de cette page par un Service Worker : ' + (navigator.serviceWorker.controller ? 'OUI' : 'NON — cliquez d\'abord sur "3. Activer le Service Worker", et rechargez la page une fois si c\'est la toute première activation.'));
+    layerUrl = REGION_URL;
+  } else {
+    log('--- Lecture depuis IndexedDB (aucune requête réseau vers ' + REGION_URL + ' attendue) ---');
+    blob = await idbGet(REGION_KEY);
+    if (!blob) { log('❌ Rien en stockage local — faites d\'abord "Télécharger et stocker".'); return; }
+    log('Blob récupéré : ' + (blob.size / 1e6).toFixed(1) + ' Mo. Tentative de construction de la couche...');
+
+    const P = protomapsL;
+    const attempts = [
+      { label: 'new P.PMTiles(blob) directement', build: () => new P.PMTiles(blob) },
+      { label: 'new P.PMTiles(new File([blob], "region.pmtiles"))', build: () => new P.PMTiles(new File([blob], 'region.pmtiles')) }
+    ];
+    for (const attempt of attempts) {
+      try { pmtilesInstance = attempt.build(); log('✅ Réussi : ' + attempt.label); break; }
+      catch (err) { log('❌ Échec (' + attempt.label + ') : ' + err); }
+    }
+    if (!pmtilesInstance) { log('Aucune approche n\'a fonctionné pour construire PMTiles depuis le Blob.'); return; }
+    layerUrl = srcMode === 'blob' ? blob : pmtilesInstance;
+    log('Source transmise à leafletLayer : ' + (srcMode === 'blob' ? 'Blob brut' : 'instance PMTiles'));
+  }
 
   const P = protomapsL;
-  const attempts = [
-    {
-      label: 'new P.PMTiles(blob) directement',
-      build: () => new P.PMTiles(blob)
-    },
-    {
-      label: 'new P.PMTiles(new File([blob], "region.pmtiles"))',
-      build: () => new P.PMTiles(new File([blob], 'region.pmtiles'))
-    }
-  ];
-
-  let pmtilesInstance = null;
-  for (const attempt of attempts) {
-    try {
-      pmtilesInstance = attempt.build();
-      log('✅ Réussi : ' + attempt.label);
-      break;
-    } catch (err) {
-      log('❌ Échec (' + attempt.label + ') : ' + err);
-    }
-  }
-
-  if (!pmtilesInstance) {
-    log('Aucune des approches essayées n\'a fonctionné. Inspection du constructeur PMTiles pour comprendre ce qu\'il attend :');
-    log(String(P.PMTiles));
-    return;
-  }
-
   try {
     if (!window._spikeMap) {
       window._spikeMap = L.map('map').setView([47.08, 2.4], 10); // Cher, cf. territoire par défaut de GeoSD
@@ -195,10 +210,6 @@ document.getElementById('btn-load-local').addEventListener('click', async () => 
       window._spikeMap.eachLayer(l => window._spikeMap.removeLayer(l));
     }
     const map = window._spikeMap;
-
-    const srcMode = document.querySelector('input[name="src-mode"]:checked').value;
-    const layerUrl = srcMode === 'blob' ? blob : pmtilesInstance;
-    log('Source transmise à leafletLayer : ' + (srcMode === 'blob' ? 'Blob brut' : 'instance PMTiles'));
 
     const layer = P.leafletLayer({
       url: layerUrl,
