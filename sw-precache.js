@@ -42,7 +42,15 @@ const APP_SHELL_URLS = [
   'geosd-themes.js',
   'geosd-offline-map.js',
   'geosd-common.css',
-  'geosd-tokens.css'
+  'geosd-tokens.css',
+  // Bibliothèques vendorisées (copies locales de Leaflet et
+  // protomaps-leaflet, cf. README-spike.md étape 28) : désormais
+  // same-origin, donc précachées ici comme le reste de la coquille —
+  // plus besoin de dépendre d'un CDN externe dès le tout premier
+  // chargement sur un nouvel appareil.
+  'vendor/leaflet.css',
+  'vendor/leaflet.js',
+  'vendor/protomaps-leaflet.js'
 ];
 
 // Bibliothèques externes (CDN) utilisées par l'application : mises en

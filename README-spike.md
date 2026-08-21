@@ -967,3 +967,141 @@ retesté — nécessite, comme pour toute évolution du Service Worker,
 un nouveau cycle désinscription-ancienne-version → redéploiement →
 rechargement en ligne (pour repeupler `geosd-runtime-v1` avec la
 correction) → nouveau test hors ligne.
+
+### Étape 27 — Correctif confirmé
+
+**Observé (test réel, après un rechargement forcé Ctrl+F5) :** carte
+affichée normalement, Service Worker actif et à jour
+(`#11156 activated and running`). Le correctif sur les réponses
+opaques (étape 26) résout bien le problème — l'oubli d'un Ctrl+F5 lors
+du test précédent expliquait l'échec apparent, pas un nouveau bug.
+
+**Bilan.** Les trois volets techniques du module hors-ligne sont
+maintenant validés :
+1. Fond de carte PMTiles régional — téléchargement, stockage,
+   interception réseau (étapes 1 à 23).
+2. Coquille applicative (HTML/JS/CSS de GeoSD) — cache automatique,
+   fonctionne dès la première visite en ligne (étape 25).
+3. Bibliothèques externes (Leaflet, protomaps-leaflet, polices) —
+   cache malgré les réponses opaques cross-origin (étapes 25 à 27).
+
+**Reste à faire, si l'équipe souhaite poursuivre :** un test de bout en
+bout complet sur Android réel (le module complet n'a été validé que
+sur desktop à ce stade — seule la brique de base, avant l'ajout de la
+coquille applicative et des bibliothèques externes, avait été
+confirmée sur le Samsung S20 FE à l'étape 23), et une revue à froid de
+l'ensemble des fichiers avant toute intégration au dépôt GeoSD
+principal — pour rappel, ce dépôt reste un spike jetable, séparé du
+projet de production (voir README-spike.md, en-tête).
+
+### Étape 28 — Revue à froid : risques et ergonomie
+
+Suite à une demande explicite de relecture critique avant tout passage
+au dépôt principal. Risques et améliorations identifiés, classés par
+ce qui a été corrigé maintenant vs. ce qui reste à traiter
+manuellement (accès réseau requis, indisponible depuis cet
+environnement).
+
+**Corrigés dans `geosd-offline-map.js` :**
+1. **Ordre suppression/écriture inversé** — la nouvelle région est
+   maintenant écrite et confirmée en IndexedDB *avant* que l'ancienne
+   soit supprimée (au lieu de l'inverse). Si quelque chose échoue entre
+   les deux (quota dépassé, coupure brutale), l'agent garde au moins la
+   région précédente plutôt que de se retrouver sans aucun fond
+   hors-ligne. L'ancienne région est capturée *avant* l'écriture de la
+   nouvelle (pas après), pour éviter toute ambiguïté de recherche
+   pendant la fenêtre où les deux entrées coexistent.
+2. **`confirm()`/`alert()` natifs remplacés** par une petite modale de
+   confirmation réutilisable (`askConfirm`), au style cohérent avec le
+   reste de l'application (réutilise `.overlay`/`.modal` existants) —
+   pour l'avertissement à 50% d'espace et la confirmation de purge.
+3. **Bouton d'annulation** ajouté pendant le téléchargement, via
+   `AbortController` — utile sur un fichier de ~300 Mo si l'agent se
+   trompe de région. Distinction entre annulation volontaire
+   (`AbortError`) et véritable échec dans le message affiché.
+4. **Avertissement « ne fermez pas cet onglet »** affiché pendant le
+   téléchargement.
+5. **Âge de la région affiché**, avec avertissement au-delà de 30
+   jours — même principe que `STALE_AFTER_DAYS`/`describeFileAge` déjà
+   utilisé ailleurs dans l'application pour les points de référence,
+   repris ici pour la cohérence.
+6. **Badge d'état sur le bouton d'en-tête** (« Fond hors-ligne : CVL
+   ✓ »), synchronisé après chaque téléchargement et chaque purge — pour
+   qu'un agent sache d'un coup d'œil si un fond est actif, sans avoir à
+   rouvrir le panneau.
+
+**Identifiés, non corrigés (nécessitent un accès réseau ou une
+décision d'équipe) :**
+- **Dépendance aux CDN publics** (jsdelivr/unpkg/cdnjs) pour Leaflet et
+  `protomaps-leaflet` — risque le plus significatif restant. Le cache
+  runtime protège les visites suivantes, mais le tout premier
+  chargement sur un nouvel appareil reste dépendant de la disponibilité
+  du CDN. Recommandation : héberger ces bibliothèques directement dans
+  le dépôt GeoSD plutôt que de les tirer d'un CDN, pour éliminer le
+  risque complètement. Non fait ici (pas d'accès réseau dans cet
+  environnement pour récupérer les fichiers) — marche à suivre donnée
+  à l'équipe séparément.
+- **Consommation mémoire pendant le téléchargement** — tous les
+  morceaux reçus (~300 Mo) sont accumulés en mémoire JS avant
+  construction du `Blob` final. Sans problème observé sur le Samsung
+  S20 FE testé, mais à surveiller sur du matériel plus ancien/limité.
+- **Versionnement des caches** (`geosd-shell-v1`, `geosd-runtime-v1`) —
+  fonctionnel tel quel, mais nécessite une consigne claire pour les
+  futurs mainteneurs : bumper la version à chaque changement substantiel
+  de la coquille applicative, pour forcer un nettoyage propre.
+- **Piège des réponses opaques** (étape 26) — déjà commenté dans le
+  code, mais suffisamment subtil pour mériter d'être aussi documenté
+  dans le `JOURNAL_DECISIONS.md` du dépôt principal, à l'intention de
+  quiconque modifierait `sw-precache.js` sans connaître cette
+  subtilité.
+- **Périmètre non tranché** : ce spike ne couvre que
+  `geosd-terrain-saisie.html`. Reste à décider si
+  `geosd-terrain-consultation.html` mérite le même traitement
+  hors-ligne avant l'intégration au dépôt principal.
+
+### Étape 29 — Bibliothèques vendorisées (fin du risque CDN)
+
+**Fait :** Leaflet (`leaflet.css`, `leaflet.js`) et `protomaps-leaflet`
+(`protomaps-leaflet.js`) déposés dans le dépôt sous `vendor/` (fait par
+l'équipe, cet environnement n'ayant pas d'accès réseau pour les
+récupérer). Deux fichiers modifiés en conséquence :
+
+- **`geosd-themes.js`** : `vendor/leaflet.css`, `vendor/leaflet.js` et
+  `vendor/protomaps-leaflet.js` ajoutés en tête des listes de candidats
+  (`LEAFLET_CSS_CANDIDATES`, `LEAFLET_JS_CANDIDATES`,
+  `PROTOMAPS_JS_CANDIDATES`), essayés en premier. Les URLs CDN
+  existantes (jsdelivr, unpkg, cdnjs) restent en repli si jamais les
+  fichiers locaux venaient à manquer ou à être corrompus — aucune
+  suppression, juste un nouvel essai prioritaire.
+- **`sw-precache.js`** : les 3 fichiers vendorisés ajoutés à
+  `APP_SHELL_URLS`, précachés dès l'installation du Service Worker
+  comme le reste de la coquille applicative (ils sont désormais
+  same-origin, donc plus concernés par la logique CDN
+  `staleWhileRevalidate`/réponses opaques — traités par le chemin
+  réseau-prioritaire classique).
+
+**Effet :** élimine la dépendance à un CDN externe même pour le tout
+premier chargement de l'application sur un nouvel appareil,
+c'était le risque le plus significatif identifié à l'étape 28.
+
+**Non vérifié depuis cet environnement (pas d'accès réseau ici) :** le
+contenu réel des 3 fichiers déposés (à confirmer que ce sont bien des
+copies fidèles de Leaflet 1.9.4 et protomaps-leaflet, pas des pages
+d'erreur HTML enregistrées par erreur) — à vérifier en ouvrant chacun
+dans un éditeur de texte, et surtout en testant que l'application se
+charge toujours normalement après ce changement.
+
+### Note méthodologique — Délai de publication GitHub Pages
+
+Piège récurrent rencontré plusieurs fois au fil de ce spike : l'onglet
+**Actions** passant au vert confirme seulement que le *build* est
+terminé, pas que GitHub Pages a fini de propager le nouveau contenu
+sur son CDN — décalage typique de quelques dizaines de secondes à 1-2
+minutes. Tester immédiatement après un commit peut donc encore servir
+l'ancienne version, en particulier avec un Service Worker qui a son
+propre cycle de détection de mise à jour par-dessus.
+
+Réflexe à prendre : attendre ~1 minute après le passage au vert de
+l'Action avant de tester, et vérifier le fichier brut directement dans
+un onglet séparé (URL du fichier + Ctrl+Maj+R) plutôt que de se fier
+uniquement à l'état affiché dans DevTools.

@@ -2120,11 +2120,13 @@ async function loadFromCandidates(loader, candidates) {
   return false;
 }
 const LEAFLET_CSS_CANDIDATES = [
+  'vendor/leaflet.css', // copie locale, prioritaire — élimine la dépendance au CDN pour le premier chargement sur un nouvel appareil (cf. README-spike.md, étape 28)
   'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css'
 ];
 const LEAFLET_JS_CANDIDATES = [
+  'vendor/leaflet.js', // copie locale, prioritaire — voir remarque ci-dessus
   'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js'
@@ -2224,6 +2226,7 @@ function addBaseLayerSwitcher(map) {
        acceptée pour ce premier essai, à noter comme écart si confirmé).
      ============================================================ */
   const PROTOMAPS_JS_CANDIDATES = [
+    'vendor/protomaps-leaflet.js', // copie locale, prioritaire — voir README-spike.md, étape 28
     'https://cdn.jsdelivr.net/npm/protomaps-leaflet@2/dist/protomaps-leaflet.js',
     'https://unpkg.com/protomaps-leaflet@2/dist/protomaps-leaflet.js'
   ];
