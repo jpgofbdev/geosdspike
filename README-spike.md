@@ -884,3 +884,53 @@ progression.
 **Statut :** premier jet complet, non encore testé en conditions
 réelles (pas d'accès réseau/tablette depuis cet environnement) — à
 tester sur le dépôt GitHub Pages comme d'habitude.
+
+### Étape 25 — Rechargement hors-ligne cassé : cache de la coquille applicative
+
+**Observé (test réel) :** en navigation privée, la page fonctionne
+parfaitement une fois chargée en ligne — mais un rechargement (F5) une
+fois réellement hors ligne donne l'écran du dinosaure Chrome
+(`ERR_INTERNET_DISCONNECTED`), y compris en navigation privée fraîche.
+
+**Diagnostic :** confirme le point explicitement mis de côté à l'étape
+13 — le cache des *données cartographiques* (résolu) est distinct du
+cache de *l'application elle-même* (HTML/JS/CSS/bibliothèques externes).
+Jamais traité jusqu'ici : un rechargement hors ligne échoue avant même
+qu'une ligne de JS ne s'exécute. Sur le terrain réel (tablette éteinte
+ou onglet fermé, rouverte sans réseau en début de tournée), ce
+scénario est plausible — décision prise de le traiter maintenant plutôt
+que de le laisser ouvert.
+
+**Décision (après clarification) :** cache automatique dès la première
+visite en ligne, pas seulement au moment du téléchargement d'une
+région — plus simple, et reste à jour à chaque visite en ligne grâce à
+la stratégie réseau-prioritaire choisie pour les fichiers GeoSD.
+
+**Fait :** `sw-precache.js` étendu avec deux responsabilités
+supplémentaires, nettement séparées de la logique PMTiles existante
+(inchangée) :
+- **Fichiers propres à GeoSD** (`geosd-terrain-saisie.html`,
+  `geosd-themes.js`, `geosd-offline-map.js`, `geosd-common.css`,
+  `geosd-tokens.css`) : mis en cache (`geosd-shell-v1`) dès
+  l'installation du Service Worker. Stratégie **réseau prioritaire,
+  repli sur le cache** — reste à jour dès qu'il y a du réseau, continue
+  de fonctionner hors ligne.
+- **Bibliothèques externes** (Leaflet, `protomaps-leaflet`, Google
+  Fonts — reconnues par domaine CDN plutôt que par liste d'URLs figées,
+  pour rester robuste aux noms de fichiers versionnés/hashés) : mises
+  en cache à la volée (`geosd-runtime-v1`). Stratégie **cache
+  prioritaire avec rafraîchissement en tâche de fond** — ces fichiers
+  changent rarement, autant privilégier la vitesse.
+- Nettoyage des anciens caches à l'activation (`activate`), en plus de
+  `clients.claim()` déjà en place.
+- Tuiles OSM/IGN et tout le reste (autres domaines) : explicitement non
+  concernés, laissés passer sans modification.
+
+**Non modifié :** la logique d'interception des régions PMTiles
+elle-même (fonction `handlePmtilesRequest`) — strictement inchangée,
+simplement réorganisée dans le fichier à côté de la nouvelle logique.
+
+**Statut :** premier jet, non testé (nécessite un nouveau déploiement
+et, comme pour toute évolution du Service Worker, de désinscrire
+l'ancienne version en place avant de tester — voir marche à suivre
+donnée à l'utilisateur).
