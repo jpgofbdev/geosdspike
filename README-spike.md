@@ -287,3 +287,70 @@ Si toujours rien → creuser plus profondément (vérifier la console pour
 le message d'avertissement `PMTILES_DEBUG_MODE actif`, confirmant que
 le bon code est bien déployé, et éventuellement dézoomer pour retrouver
 une vue proche de celle de l'étape 4 où l'eau s'affichait).
+
+### Étape 7 — Hypothèse sur-zoom (`maxDataZoom`)
+
+**Observé (test réel, règle minimale `transportation` en rouge) :**
+toujours rien, sans la moindre erreur — ni erreur de construction de
+la couche, ni erreur interne à `protomaps-leaflet`. `CVL.pmtiles` se
+charge bien (206 confirmés dans l'onglet Réseau). Le message de log de
+debug affichait encore « eau en rouge » dans la capture fournie — texte
+resté obsolète par erreur lors du passage à la règle « routes » à
+l'étape 6 bis (corrigé maintenant, la logique elle-même utilisait bien
+`transportation`).
+
+**Piste retenue :** dans les traces fournies, les tuiles OSM en échec à
+côté sont au niveau **zoom 19** — un zoom très profond (échelle
+parcelle). Les tuilesets vectoriels type OpenMapTiles montent
+généralement au-delà rarement du zoom natif 14. Sans sur-zoom (agrandir
+côté client la tuile la plus profonde disponible plutôt que d'aller en
+chercher une qui n'existe pas), demander une zone à un niveau que
+l'archive ne couvre pas donnerait exactement ce qui est observé : rien,
+sans erreur.
+
+**Fait :** ajout de l'option `maxDataZoom: 14` à `P.leafletLayer(...)`
+pour déclencher le sur-zoom automatique de `protomaps-leaflet`
+au-delà du zoom natif de l'archive. Valeur 14 = hypothèse la plus
+courante pour ce type de schéma, **non confirmée pour `CVL.pmtiles`
+spécifiquement** — à vérifier/ajuster via les métadonnées de l'archive
+(le viewer pmtiles.io affiche le zoom max réel).
+
+**Statut :** en attente du résultat de ce test. Si des lignes rouges
+apparaissent maintenant, l'hypothèse est confirmée — il faudra alors
+lire le vrai zoom max de l'archive (pmtiles.io) pour remplacer la
+valeur `14` par la bonne, avant de repasser aux règles complètes. Si
+toujours rien, dézoomer manuellement la carte à un niveau nettement
+plus large (région/département) sera le test suivant pour trancher
+entre "problème de zoom" et "autre chose".
+
+### Étape 8 — Cause racine trouvée : `paintRules`/`labelRules` (camelCase), pas `paint_rules`/`label_rules`
+
+**Observé :** aucun changement, à aucun niveau de zoom, depuis le
+début — invalidant l'hypothèse du sur-zoom de l'étape 7.
+
+**Diagnostic final :** demande faite d'inspecter directement l'objet
+`protomapsL` en console (`Object.keys(protomapsL)`). Résultat :
+`PolygonSymbolizer`, `LineSymbolizer`, `TextSymbolizer`, `leafletLayer`
+confirmés — mais aussi `paintRules` et `labelRules`, en **camelCase**.
+Les options passées à `P.leafletLayer({...})` depuis l'étape 5
+utilisaient `paint_rules`/`label_rules` (snake_case, erreur de ma
+part — mélange avec une convention d'une autre lib/version). Ces clés
+n'étant pas celles attendues, elles étaient silencieusement ignorées :
+la couche se créait avec un jeu de règles vide, d'où un rendu blanc à
+tous les niveaux de zoom, sans la moindre erreur — cohérent avec tout
+ce qui a été observé depuis l'étape 6.
+
+**Corrigé :** dans l'appel à `P.leafletLayer(...)`, les clés sont
+maintenant `paintRules: paint_rules` et `labelRules: label_rules` (les
+noms de variables internes n'ont pas changé, seule la clé transmise à
+la fonction). `PMTILES_DEBUG_MODE` repassé à `false` : le style complet
+de l'étape 5 (occupation du sol, eau, cours d'eau permanents/
+intermittents, routes, libellés) est de nouveau actif.
+
+**Non vérifié depuis cet environnement (pas d'accès réseau ici) :** à
+confirmer au prochain test réel — normalement le rendu devrait
+maintenant se rapprocher nettement du prototype MapLibre. Les deux
+réserves de l'étape 5 (rendu des tirets `dash`, libellés qui ne
+suivront probablement pas le tracé des lignes) restent d'actualité et
+sont les prochains points à observer une fois l'affichage de base
+confirmé.

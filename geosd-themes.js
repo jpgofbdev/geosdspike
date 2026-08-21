@@ -2221,7 +2221,7 @@ function addBaseLayerSwitcher(map) {
          fonction). PMTILES_DEBUG_MODE=true utilise ce jeu réduit ;
          repasser à false une fois l'affichage de base confirmé, pour
          revenir aux règles complètes déjà écrites. */
-      const PMTILES_DEBUG_MODE = true;
+      const PMTILES_DEBUG_MODE = false;
 
       const paint_rules_debug = [
         {
@@ -2323,14 +2323,29 @@ function addBaseLayerSwitcher(map) {
       const paint_rules = PMTILES_DEBUG_MODE ? paint_rules_debug : paint_rules_full;
       const label_rules = PMTILES_DEBUG_MODE ? label_rules_debug : label_rules_full;
       if (PMTILES_DEBUG_MODE) {
-        console.warn('SPIKE PMTiles : PMTILES_DEBUG_MODE actif — une seule règle minimale (eau en rouge) au lieu du style complet. Voir README-spike.md, étape 6.');
+        console.warn('SPIKE PMTiles : PMTILES_DEBUG_MODE actif — une seule règle minimale (routes en rouge) au lieu du style complet. Voir README-spike.md, étape 6 bis.');
       }
 
+      /* ---- SPIKE PMTiles — hypothèse "sur-zoom" (étape 7, cf. README) ----
+         Rien ne se dessine même avec la règle minimale, sans erreur.
+         Piste : la vue testée est à un zoom très profond (z19 observé
+         sur les tuiles OSM en échec dans la même page) ; les tuilesets
+         vectoriels type OpenMapTiles montent rarement au-delà du zoom
+         natif 14. Sans sur-zoom (réutiliser/agrandir la tuile la plus
+         profonde disponible), demander une zone à un niveau de zoom
+         que l'archive ne contient pas donnerait exactement ce qui est
+         observé. maxDataZoom déclare le zoom natif max de l'archive à
+         protomaps-leaflet pour qu'il fasse ce sur-zoom automatiquement
+         au-delà. Valeur 14 : hypothèse la plus courante pour ce type de
+         tuileset, pas confirmée pour CVL.pmtiles — à ajuster si le
+         zoom natif réel est différent (voir pmtiles.io, qui affiche le
+         zoom max de l'archive dans ses métadonnées). */
       const lyrPmtiles = P.leafletLayer({
         url: PMTILES_URL,
-        paint_rules,
-        label_rules,
+        paintRules: paint_rules,
+        labelRules: label_rules,
         backgroundColor: '#ffffff',
+        maxDataZoom: 14,
         attribution: 'PMTiles (spike) — CVL'
       });
       layersControl.addBaseLayer(lyrPmtiles, 'Fond PMTiles (test)');
