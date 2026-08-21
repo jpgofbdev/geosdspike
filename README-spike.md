@@ -763,3 +763,124 @@ recharger, mais ça s'est montré peu fiable en pratique ici.
 
 **Statut :** en attente du nouveau test, avec vérification explicite du
 bandeau vert avant de couper le réseau.
+
+### Étape 22 — Validation complète du Plan A (Service Worker)
+
+**Cause du blocage précédent :** l'option DevTools « Bypass for
+network » (panneau Application → Service workers) était cochée —
+elle force volontairement toutes les requêtes à ignorer tout Service
+Worker, pour faciliter le débogage réseau classique. Rien à voir avec
+le code : `sw-precache.js` était déjà correctement enregistré et actif
+(`#11144 activated and running`). Une fois la case décochée et la page
+rechargée, le bandeau d'état est passé au vert (contrôle confirmé).
+
+**Observé (test réel, décisif) :** avec le Service Worker en contrôle,
+« Charger depuis le stockage local » (source = URL réseau normale,
+interceptée par le Service Worker) affiche la carte aussi bien en ligne
+que hors ligne (réseau effectivement coupé, page non rechargée entre
+les deux). **Le Plan A fonctionne de bout en bout.**
+
+**Point notable à garder en tête :** un second Service Worker
+(`sw.js`, projet distinct "offline-map-lab") est enregistré sur le même
+domaine `jpgofbdev.github.io`. Actuellement arrêté, sans impact
+observé, mais à surveiller si un comportement inattendu apparaît plus
+tard — plusieurs projets hébergés sur le même domaine peuvent chacun
+avoir leur propre Service Worker.
+
+**Bilan mis à jour des 5 points du spike :**
+1. ✅ Rendu correct du fond une fois sélectionné.
+2. ✅ Cohabitation avec `markersLayer`, popup, formulaire.
+3. ✅ Comportement en coupure réseau effective — validé via
+   l'architecture Service Worker + IndexedDB (le Plan B "Blob direct"
+   avait échoué, abandonné à l'étape 19).
+4. ⏳ Poids / mode de chargement compatibles avec un usage tablette —
+   partiellement observé (téléchargement de 350 Mo avec suivi de
+   progression fonctionnel), à confirmer sur un appareil Android réel
+   plutôt que desktop Chrome (les tests de cette section ont été faits
+   sur desktop ; le mécanisme devrait se comporter identiquement sur
+   Chrome Android, mais non vérifié explicitement).
+5. ✅ Fidélité visuelle vs `offline-map-lab` — validée globalement.
+
+**Prochaine étape naturelle :** intégrer cette architecture (Service
+Worker + IndexedDB) dans l'application principale, sous la forme du
+module de gestion explicite du fond hors-ligne discuté (choix de
+région, jauge d'espace avec avertissement à 50%, téléchargement piloté
+avec progression, changement de région, purge) — en gardant `sw-precache.js`
+comme brique de base, éprouvée et fonctionnelle.
+
+### Étape 23 — Validation sur Android réel (Samsung S20 FE)
+
+**Observé :** protocole complet (téléchargement, activation du Service
+Worker, rechargement, contrôle confirmé, affichage en ligne puis hors
+ligne via mode avion réel) rejoué avec succès sur un Samsung Galaxy
+S20 FE / Chrome Android. Aucun souci de fluidité de téléchargement ni
+de persistance signalé.
+
+**Bilan final des 5 points du spike :**
+1. ✅ Rendu correct du fond une fois sélectionné.
+2. ✅ Cohabitation avec `markersLayer`, popup, formulaire.
+3. ✅ Comportement en coupure réseau effective — Service Worker +
+   IndexedDB, validé desktop et Android.
+4. ✅ Poids / mode de chargement compatibles avec un usage tablette —
+   350 Mo téléchargés et exploités sans souci sur Android réel.
+5. ✅ Fidélité visuelle vs `offline-map-lab` — validée globalement.
+
+**Les 5 points du spike initial sont maintenant tous validés.**
+L'architecture Service Worker (`sw-precache.js`) + IndexedDB pour le
+pré-cache est confirmée fonctionnelle de bout en bout, sur le terrain
+cible (Chrome Android). Prochaine étape naturelle : construction du
+module de gestion explicite du fond hors-ligne (choix de région, jauge
+d'espace, téléchargement piloté, changement de région, purge) et
+intégration dans l'application principale.
+
+### Étape 24 — Construction du module de gestion hors-ligne
+
+**Fait**, en s'appuyant directement sur `sw-precache.js` déjà éprouvé
+(desktop + Android) :
+
+1. **`geosd-themes.js`** : ajout de `PMTILES_REGIONS` (les 13 codes
+   région + libellés), `pmtilesUrlFor(code)`, et
+   `getActivePmtilesRegion()`/`setActivePmtilesRegion(code)`
+   (mémorisation via `localStorage`, même pattern que
+   `TERRITORY_STORAGE_KEY` déjà existant). `addBaseLayerSwitcher` lit
+   désormais la région active au lieu de `CVL` en dur — CVL reste la
+   valeur par défaut si aucune région n'a encore été choisie.
+
+2. **`sw-precache.js`** généralisé : reconnaît n'importe laquelle des
+   13 URLs régionales (`regionCodeFromUrl`), plus seulement `CVL`. Base
+   IndexedDB renommée `geosd_pmtiles_offline` (propre au module de
+   production, distincte de `geosd-spike-precache` utilisée par
+   `test-precache.html`, qui reste un test jetable à part).
+
+3. **`geosd-offline-map.js`** (nouveau fichier) : le module de gestion
+   à proprement parler.
+   - Enregistre le Service Worker au chargement de la page (silencieux
+     si non supporté — dégradation, pas de blocage).
+   - Panneau modal (réutilise les classes `.overlay`/`.modal`/`.field`
+     déjà en place, cohérent visuellement avec le sélecteur de
+     territoire existant) : état actuel (région chargée, taille,
+     date), sélecteur des 13 régions, conseil de débit (`navigator.
+     connection.effectiveType`, purement indicatif — non supporté sur
+     Safari/iOS, dégrade proprement vers un message générique),
+     estimation d'espace disponible (`navigator.storage.estimate()`),
+     barre de progression pendant le téléchargement, bouton de purge.
+   - Un seul fichier régional stocké à la fois : toute région
+     précédente est supprimée avant l'enregistrement de la nouvelle.
+   - Avertissement (confirmation à interrompre) si le fichier
+     dépasserait ~50% de l'espace estimé disponible, une fois la
+     taille réelle connue via l'en-tête `Content-Length`.
+   - `navigator.storage.persist()` demandé après chaque téléchargement
+     réussi, pour limiter le risque d'éviction du stockage par l'OS.
+
+4. **`geosd-terrain-saisie.html`** : bouton « Fond hors-ligne » ajouté
+   dans la barre d'outils (à côté du sélecteur de territoire), et
+   chargement de `geosd-offline-map.js` juste après `geosd-themes.js`.
+
+**Non modifiés :** `geosd-common.css`, `geosd-tokens.css` — le panneau
+réutilise entièrement le style existant, aucune règle CSS nouvelle
+nécessaire au-delà de quelques styles inline pour la barre de
+progression.
+
+**Statut :** premier jet complet, non encore testé en conditions
+réelles (pas d'accès réseau/tablette depuis cet environnement) — à
+tester sur le dépôt GitHub Pages comme d'habitude.

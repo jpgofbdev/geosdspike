@@ -1893,6 +1893,47 @@ const COMMUNES_CVL = [
 ];
 // ==COMMUNES_END==
 
+/* ---- Régions PMTiles disponibles (fond de carte hors-ligne) ----
+   Un fichier .pmtiles par grande région, sur le même serveur. Ajouter
+   une région : une seule ligne à ajouter ici, elle apparaît
+   automatiquement dans le sélecteur du module hors-ligne
+   (geosd-offline-map.js) et peut devenir le fond de carte vectoriel
+   (addBaseLayerSwitcher, plus bas dans ce fichier).
+   ========================================================= */
+const PMTILES_BASE_URL = 'https://tiles.jpg-cvl-dev.fr/tiles/';
+const PMTILES_REGIONS = [
+  { code: 'AURA', label: 'Auvergne-Rhône-Alpes' },
+  { code: 'BFC',  label: 'Bourgogne-Franche-Comté' },
+  { code: 'BRE',  label: 'Bretagne' },
+  { code: 'CVL',  label: 'Centre-Val de Loire' },
+  { code: 'COR',  label: 'Corse' },
+  { code: 'GES',  label: 'Grand Est' },
+  { code: 'HDF',  label: 'Hauts-de-France' },
+  { code: 'IDF',  label: 'Île-de-France' },
+  { code: 'NOR',  label: 'Normandie' },
+  { code: 'NAQ',  label: 'Nouvelle-Aquitaine' },
+  { code: 'OCC',  label: 'Occitanie' },
+  { code: 'PACA', label: 'Provence-Alpes-Côte d\'Azur' },
+  { code: 'PDL',  label: 'Pays de la Loire' }
+];
+function pmtilesUrlFor(code) { return PMTILES_BASE_URL + code + '.pmtiles'; }
+
+// Région actuellement utilisée comme fond vectoriel (indépendant du
+// territoire cartographique ci-dessous — un territoire est une simple
+// emprise de zoom initial, une région PMTiles est un fichier de
+// données). CVL par défaut, cohérent avec les territoires existants
+// (tous en Centre-Val de Loire).
+const PMTILES_ACTIVE_REGION_KEY = 'geosd_pmtiles_active_region';
+function getActivePmtilesRegion() {
+  try {
+    const saved = localStorage.getItem(PMTILES_ACTIVE_REGION_KEY);
+    return PMTILES_REGIONS.some(r => r.code === saved) ? saved : 'CVL';
+  } catch (e) { return 'CVL'; }
+}
+function setActivePmtilesRegion(code) {
+  try { localStorage.setItem(PMTILES_ACTIVE_REGION_KEY, code); } catch (e) { /* ignoré */ }
+}
+
 /* ---- Territoires disponibles (un par service départemental) ----
    Rectangle [ [lat_sud, lng_ouest], [lat_nord, lng_est] ] par territoire.
    Pour ajouter un service : une seule ligne à ajouter ici, les 3
@@ -2186,10 +2227,13 @@ function addBaseLayerSwitcher(map) {
     'https://cdn.jsdelivr.net/npm/protomaps-leaflet@2/dist/protomaps-leaflet.js',
     'https://unpkg.com/protomaps-leaflet@2/dist/protomaps-leaflet.js'
   ];
-  // CVL choisi pour ce premier essai (cf. consigne du spike). Les autres
-  // fichiers régionaux disponibles sur le même serveur ne sont pas
-  // branchés ici : un seul fond à la fois pour ce premier test.
-  const PMTILES_URL = 'https://tiles.jpg-cvl-dev.fr/tiles/CVL.pmtiles';
+  // Région active mémorisée par le module hors-ligne
+  // (geosd-offline-map.js) — CVL par défaut si aucune n'a encore été
+  // choisie. Le fichier régional lui-même peut être servi depuis le
+  // réseau ou, s'il a été téléchargé pour un usage hors-ligne,
+  // intercepté et servi localement par sw-precache.js — de façon
+  // transparente pour ce code, qui ne fait que fournir une URL normale.
+  const PMTILES_URL = pmtilesUrlFor(getActivePmtilesRegion());
 
   // Interpolation linéaire par paliers, pour reproduire les expressions
   // ["interpolate", ["linear"], ["zoom"], ...] du style.json d'origine.
