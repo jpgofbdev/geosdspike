@@ -934,3 +934,36 @@ simplement réorganisée dans le fichier à côté de la nouvelle logique.
 et, comme pour toute évolution du Service Worker, de désinscrire
 l'ancienne version en place avant de tester — voir marche à suivre
 donnée à l'utilisateur).
+
+### Étape 26 — Cause précise trouvée : réponses opaques jamais mises en cache
+
+**Observé (test réel) :** une fois reconnecté, tout fonctionne
+parfaitement (coquille + carte). Hors ligne, le bandeau « Impossible
+de charger la bibliothèque cartographique » persiste. Console : échecs
+`net::ERR_FAILED` sur les trois candidats CDN de Leaflet (jsdelivr,
+unpkg, cdnjs.cloudflare.com), avec un avertissement Chrome explicite —
+« The FetchEvent... resulted in a network error response » — signe que
+notre propre gestionnaire renvoyait `Response.error()` faute de rien
+trouver en cache.
+
+**Cause exacte :** les fichiers Leaflet sont chargés par
+`geosd-themes.js` via de simples balises `<link>`/`<script>` (sans
+attribut `crossorigin`), ce qui donne des requêtes cross-origin
+« opaques » du point de vue du Service Worker — leur statut apparaît
+toujours comme `0`, donc `response.ok` est **toujours faux**, même
+quand la requête réussit réellement. La condition
+`if (response && response.ok) cache.put(...)` de `staleWhileRevalidate`
+ne mettait donc jamais rien en cache pour ces ressources précises,
+silencieusement, malgré des chargements en ligne parfaitement
+fonctionnels. Piège connu et documenté des Service Workers, découvert
+ici par l'observation plutôt qu'anticipé.
+
+**Corrigé :** la condition accepte maintenant aussi les réponses de
+type `opaque` (`response.ok || response.type === 'opaque'`), en plus
+des réponses `ok` classiques (fichiers same-origin ou CORS explicite).
+
+**Statut :** correctif appliqué à `sw-precache.js`, non encore
+retesté — nécessite, comme pour toute évolution du Service Worker,
+un nouveau cycle désinscription-ancienne-version → redéploiement →
+rechargement en ligne (pour repeupler `geosd-runtime-v1` avec la
+correction) → nouveau test hors ligne.

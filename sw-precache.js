@@ -147,7 +147,15 @@ async function staleWhileRevalidate(request, cacheName) {
   const cached = await cache.match(request);
   const networkPromise = fetch(request)
     .then(response => {
-      if (response && response.ok) cache.put(request, response.clone());
+      // Les requêtes cross-origin sans CORS explicite (cas des balises
+      // <link>/<script> classiques vers un CDN, sans l'attribut
+      // crossorigin) donnent des réponses "opaques" : statut toujours
+      // 0, donc response.ok toujours faux même en cas de succès réel.
+      // Il faut les mettre en cache quand même (type "opaque" ou
+      // "basic"/"cors" avec ok), sinon rien n'est jamais stocké.
+      if (response && (response.ok || response.type === 'opaque')) {
+        cache.put(request, response.clone());
+      }
       return response;
     })
     .catch(() => null);
